@@ -1,0 +1,102 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Gophertunnel",
+  "projectDescription": "A comprehensive Go library for building Minecraft Bedrock Edition network tools, servers, and clients",
+  "theme": "aspen",
+  "primaryColor": "#5cb85c",
+  "lightColor": "#7bc96f",
+  "darkColor": "#4a9a4a",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/connections",
+              "concepts/authentication",
+              "concepts/packets",
+              "concepts/protocol"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/client",
+              "guides/server",
+              "guides/proxy",
+              "guides/resource-packs",
+              "guides/nbt",
+              "guides/query"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/overview",
+              "examples/client",
+              "examples/server",
+              "examples/proxy"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Packages",
+            "pages": [
+              "api/minecraft",
+              "api/auth",
+              "api/nbt",
+              "api/protocol",
+              "api/packets",
+              "api/resource",
+              "api/text",
+              "api/query"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Minecraft Bedrock Edition protocol implementation",
+    "Client and server connection handling with Dial/Listen API",
+    "Xbox Live and Microsoft authentication",
+    "NBT (Named Binary Tag) encoding and decoding",
+    "Complete packet protocol support (229+ packet types)",
+    "Resource pack compilation and management",
+    "Server query protocol (UT3)",
+    "MITM proxy capabilities",
+    "Text formatting and color codes"
+  ],
+  "publicApiSurface": [
+    "minecraft.Dial() - Connect to Minecraft server",
+    "minecraft.Listen() - Create Minecraft listener/server",
+    "minecraft.Dialer - Configure client connections",
+    "minecraft.ListenConfig - Configure server listener",
+    "minecraft.Conn - Minecraft network connection",
+    "auth.RequestLiveToken() - Microsoft authentication",
+    "auth.RefreshTokenSource() - Token refresh handling",
+    "nbt.Marshal() - Encode NBT data",
+    "nbt.Unmarshal() - Decode NBT data",
+    "nbt.NewEncoder() - Create NBT encoder",
+    "nbt.NewDecoder() - Create NBT decoder",
+    "protocol packet types - 229+ Minecraft packets",
+    "resource.Compile() - Compile resource packs",
+    "resource.Pack - Resource pack structure",
+    "text formatting constants - Minecraft colors/formatting",
+    "query.Do() - Query server information"
+  ]
+}
