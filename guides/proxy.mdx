@@ -1,0 +1,415 @@
+---
+title: Creating a MITM Proxy
+description: Learn how to create a man-in-the-middle proxy to intercept and modify Minecraft traffic
+---
+
+This guide shows you how to create a proxy that sits between a Minecraft client and server, allowing you to intercept, log, and modify packets in both directions.
+
+## Overview
+
+A proxy combines both server and client functionality:
+- Acts as a **server** to accept incoming client connections
+- Acts as a **client** to connect to the target server
+- Forwards packets between the client and server while allowing inspection and modification
+
+## Architecture
+
+```
+Minecraft Client <---> Proxy Server <---> Target Server
+                       (Your Code)
+```
+
+The proxy:
+1. Listens for client connections on a local address
+2. For each client, connects to the remote server
+3. Spawns the client using game data from the remote server
+4. Forwards packets bidirectionally between client and server
+
+## Complete Proxy Example
+
+<Steps>
+  <Step title="Setup Configuration">
+    Create a configuration structure:
+
+    ```go
+    type config struct {
+        Connection struct {
+            LocalAddress  string
+            RemoteAddress string
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Initialize Authentication">
+    Set up Microsoft authentication:
+
+    ```go
+    import "github.com/sandertv/gophertunnel/minecraft/auth"
+
+    token, err := auth.RequestLiveToken()
+    if err != nil {
+        panic(err)
+    }
+    src := auth.RefreshTokenSource(token)
+    ```
+  </Step>
+
+  <Step title="Create Listener with Foreign Status">
+    Mirror the target server's status:
+
+    ```go
+    p, err := minecraft.NewForeignStatusProvider(config.Connection.RemoteAddress)
+    if err != nil {
+        panic(err)
+    }
+    
+    listener, err := minecraft.ListenConfig{
+        StatusProvider: p,
+    }.Listen("raknet", config.Connection.LocalAddress)
+    if err != nil {
+        panic(err)
+    }
+    defer listener.Close()
+    ```
+  </Step>
+
+  <Step title="Accept and Handle Connections">
+    For each client, connect to the remote server:
+
+    ```go
+    for {
+        c, err := listener.Accept()
+        if err != nil {
+            panic(err)
+        }
+        go handleConn(c.(*minecraft.Conn), listener, config, src)
+    }
+    ```
+  </Step>
+</Steps>
+
+## Full Implementation
+
+Here's the complete proxy implementation from Gophertunnel's main.go:
+
+```go
+package main
+
+import (
+    "errors"
+    "log"
+    "os"
+    "sync"
+
+    "github.com/pelletier/go-toml"
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/auth"
+    "golang.org/x/oauth2"
+)
+
+func main() {
+    config := readConfig()
+    token, err := auth.RequestLiveToken()
+    if err != nil {
+        panic(err)
+    }
+    src := auth.RefreshTokenSource(token)
+
+    p, err := minecraft.NewForeignStatusProvider(config.Connection.RemoteAddress)
+    if err != nil {
+        panic(err)
+    }
+    listener, err := minecraft.ListenConfig{
+        StatusProvider: p,
+    }.Listen("raknet", config.Connection.LocalAddress)
+    if err != nil {
+        panic(err)
+    }
+    defer listener.Close()
+    
+    for {
+        c, err := listener.Accept()
+        if err != nil {
+            panic(err)
+        }
+        go handleConn(c.(*minecraft.Conn), listener, config, src)
+    }
+}
+
+func handleConn(conn *minecraft.Conn, listener *minecraft.Listener, config config, src oauth2.TokenSource) {
+    serverConn, err := minecraft.Dialer{
+        TokenSource: src,
+        ClientData:  conn.ClientData(),
+    }.Dial("raknet", config.Connection.RemoteAddress)
+    if err != nil {
+        panic(err)
+    }
+    
+    var g sync.WaitGroup
+    g.Add(2)
+    go func() {
+        if err := conn.StartGame(serverConn.GameData()); err != nil {
+            panic(err)
+        }
+        g.Done()
+    }()
+    go func() {
+        if err := serverConn.DoSpawn(); err != nil {
+            panic(err)
+        }
+        g.Done()
+    }()
+    g.Wait()
+
+    go func() {
+        defer listener.Disconnect(conn, "connection lost")
+        defer serverConn.Close()
+        for {
+            pk, err := conn.ReadPacket()
+            if err != nil {
+                return
+            }
+            if err := serverConn.WritePacket(pk); err != nil {
+                var disc minecraft.DisconnectError
+                if ok := errors.As(err, &disc); ok {
+                    _ = listener.Disconnect(conn, disc.Error())
+                }
+                return
+            }
+        }
+    }()
+    
+    go func() {
+        defer serverConn.Close()
+        defer listener.Disconnect(conn, "connection lost")
+        for {
+            pk, err := serverConn.ReadPacket()
+            if err != nil {
+                var disc minecraft.DisconnectError
+                if ok := errors.As(err, &disc); ok {
+                    _ = listener.Disconnect(conn, disc.Error())
+                }
+                return
+            }
+            if err := conn.WritePacket(pk); err != nil {
+                return
+            }
+        }
+    }()
+}
+
+type config struct {
+    Connection struct {
+        LocalAddress  string
+        RemoteAddress string
+    }
+}
+
+func readConfig() config {
+    c := config{}
+    if _, err := os.Stat("config.toml"); os.IsNotExist(err) {
+        f, err := os.Create("config.toml")
+        if err != nil {
+            log.Fatalf("create config: %v", err)
+        }
+        data, err := toml.Marshal(c)
+        if err != nil {
+            log.Fatalf("encode default config: %v", err)
+        }
+        if _, err := f.Write(data); err != nil {
+            log.Fatalf("write default config: %v", err)
+        }
+        _ = f.Close()
+    }
+    data, err := os.ReadFile("config.toml")
+    if err != nil {
+        log.Fatalf("read config: %v", err)
+    }
+    if err := toml.Unmarshal(data, &c); err != nil {
+        log.Fatalf("decode config: %v", err)
+    }
+    if c.Connection.LocalAddress == "" {
+        c.Connection.LocalAddress = "0.0.0.0:19132"
+    }
+    data, _ = toml.Marshal(c)
+    if err := os.WriteFile("config.toml", data, 0644); err != nil {
+        log.Fatalf("write config: %v", err)
+    }
+    return c
+}
+```
+
+## Configuration File
+
+Create a `config.toml` file:
+
+```toml
+[Connection]
+LocalAddress = "0.0.0.0:19132"
+RemoteAddress = "play.cubecraft.net:19132"
+```
+
+## Packet Inspection
+
+To inspect packets, add logging in the forwarding loops:
+
+### Client to Server
+
+```go
+for {
+    pk, err := conn.ReadPacket()
+    if err != nil {
+        return
+    }
+    
+    // Inspect/log packet
+    fmt.Printf("Client -> Server: %T\n", pk)
+    
+    // Modify packet if needed
+    switch p := pk.(type) {
+    case *packet.Text:
+        fmt.Printf("Message: %s\n", p.Message)
+        // p.Message = "Modified: " + p.Message
+    }
+    
+    if err := serverConn.WritePacket(pk); err != nil {
+        return
+    }
+}
+```
+
+### Server to Client
+
+```go
+for {
+    pk, err := serverConn.ReadPacket()
+    if err != nil {
+        return
+    }
+    
+    // Inspect/log packet
+    fmt.Printf("Server -> Client: %T\n", pk)
+    
+    // Modify packet if needed
+    switch p := pk.(type) {
+    case *packet.SetTitle:
+        fmt.Printf("Title: %s\n", p.Text)
+    }
+    
+    if err := conn.WritePacket(pk); err != nil {
+        return
+    }
+}
+```
+
+## Use Cases
+
+### Packet Logger
+
+Log all packets for debugging:
+
+```go
+import "log"
+
+for {
+    pk, err := conn.ReadPacket()
+    if err != nil {
+        return
+    }
+    log.Printf("C->S: %T %+v\n", pk, pk)
+    serverConn.WritePacket(pk)
+}
+```
+
+### Anti-Cheat
+
+Validate client packets:
+
+```go
+switch p := pk.(type) {
+case *packet.PlayerAuthInput:
+    if !isValidPosition(p.Position) {
+        listener.Disconnect(conn, "Invalid movement")
+        return
+    }
+}
+```
+
+### Custom Features
+
+Add custom commands or features:
+
+```go
+switch p := pk.(type) {
+case *packet.Text:
+    if strings.HasPrefix(p.Message, "/custom") {
+        // Handle custom command
+        handleCustomCommand(conn, p.Message)
+        continue // Don't forward to server
+    }
+}
+```
+
+## Synchronization
+
+The proxy uses a `sync.WaitGroup` to ensure both spawn operations complete:
+
+```go
+var g sync.WaitGroup
+g.Add(2)
+go func() {
+    if err := conn.StartGame(serverConn.GameData()); err != nil {
+        panic(err)
+    }
+    g.Done()
+}()
+go func() {
+    if err := serverConn.DoSpawn(); err != nil {
+        panic(err)
+    }
+    g.Done()
+}()
+g.Wait()
+```
+
+This ensures:
+1. Client receives game data and spawns
+2. Proxy connects to remote server and spawns
+3. Packet forwarding only starts after both complete
+
+## Error Handling
+
+### Disconnect Errors
+
+```go
+import "errors"
+
+if err := serverConn.WritePacket(pk); err != nil {
+    var disc minecraft.DisconnectError
+    if errors.As(err, &disc) {
+        _ = listener.Disconnect(conn, disc.Error())
+    }
+    return
+}
+```
+
+### Graceful Cleanup
+
+```go
+defer listener.Disconnect(conn, "connection lost")
+defer serverConn.Close()
+```
+
+## Best Practices
+
+1. **Use Goroutines**: Run client->server and server->client forwarding in separate goroutines
+2. **Preserve Client Data**: Use `conn.ClientData()` when dialing the server to maintain client identity
+3. **Handle Disconnections**: Always check for `DisconnectError` and clean up properly
+4. **Avoid Blocking**: Don't block in packet inspection code to maintain performance
+
+## Next Steps
+
+- Learn about [packet types](/api/packets)
+- Understand [NBT data](/guides/nbt) for advanced packet manipulation
+- Add [resource pack inspection](/guides/resource-packs)

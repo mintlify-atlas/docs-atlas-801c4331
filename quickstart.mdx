@@ -1,80 +1,277 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Build your first Minecraft client and server with Gophertunnel
 ---
 
-## Get started in three steps
+# Quick Start
 
-Get your documentation site running locally and make your first customization.
+This guide will walk you through creating a simple Minecraft client that connects to a server and a basic server that accepts player connections.
 
-### Step 1: Set up your local environment
+## Connecting as a Client
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+Let's create a client that connects to a Minecraft server, spawns in the world, and reads packets.
+
+<Steps>
+  <Step title="Create the Client File">
+    Create a new file called `client.go`:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```go client.go
+    package main
+
+    import (
+        "fmt"
+        "github.com/sandertv/gophertunnel/minecraft"
+        "github.com/sandertv/gophertunnel/minecraft/auth"
+        "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+    )
+
+    func main() {
+        // Create a minecraft.Dialer with an auth.TokenSource to authenticate
+        dialer := minecraft.Dialer{
+            TokenSource: auth.TokenSource,
+        }
+        
+        // Dial a connection to the target server
+        address := "mco.mineplex.com:19132"
+        conn, err := dialer.Dial("raknet", address)
+        if err != nil {
+            panic(err)
+        }
+        defer conn.Close()
+
+        // Make the client spawn in the world
+        if err := conn.DoSpawn(); err != nil {
+            panic(err)
+        }
+        
+        fmt.Println("Connected and spawned successfully!")
+
+        // Read packets in a loop
+        for {
+            pk, err := conn.ReadPacket()
+            if err != nil {
+                break
+            }
+
+            // Type assert packets to access their data
+            switch p := pk.(type) {
+            case *packet.Emote:
+                fmt.Printf("Emote packet received: %v\n", p.EmoteID)
+            case *packet.MovePlayer:
+                fmt.Printf("Player %v moved to %v\n", p.EntityRuntimeID, p.Position)
+            case *packet.Text:
+                fmt.Printf("Chat message: %v\n", p.Message)
+            }
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Run the Client">
+    ```bash
+    go run client.go
+    ```
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+    The first time you run this, you'll be prompted to authenticate with Microsoft/Xbox Live. Follow the authentication flow in your browser.
+  </Step>
+</Steps>
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+The `auth.TokenSource` handles Xbox Live authentication automatically. Tokens are cached for subsequent runs.
 </Note>
+
+### Understanding the Client Code
+
+Let's break down the key components:
+
+| Component | Description |
+|-----------|-------------|
+| `minecraft.Dialer` | Used to establish connections to remote servers |
+| `TokenSource` | Handles Xbox Live authentication |
+| `conn.DoSpawn()` | Completes the login sequence and spawns the player |
+| `conn.ReadPacket()` | Reads the next packet from the server |
+| `conn.WritePacket()` | Sends a packet to the server |
+
+### Writing Packets
+
+To send packets to the server, use `WritePacket()`:
+
+```go
+// Request a larger chunk radius
+p := &packet.RequestChunkRadius{
+    ChunkRadius: 32,
+    MaxChunkRadius: 32,
+}
+if err := conn.WritePacket(p); err != nil {
+    break
+}
+```
+
+## Creating a Server
+
+Now let's create a basic server that accepts player connections.
+
+<Steps>
+  <Step title="Create the Server File">
+    Create a new file called `server.go`:
+    
+    ```go server.go
+    package main
+
+    import (
+        "fmt"
+        "github.com/sandertv/gophertunnel/minecraft"
+        "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+    )
+
+    func main() {
+        // Create a ListenConfig with a status provider
+        cfg := minecraft.ListenConfig{
+            StatusProvider: minecraft.NewStatusProvider("My Gophertunnel Server", "Gophertunnel"),
+        }
+
+        // Listen on port 19132
+        listener, err := cfg.Listen("raknet", ":19132")
+        if err != nil {
+            panic(err)
+        }
+        defer listener.Close()
+        
+        fmt.Println("Server listening on :19132")
+
+        // Accept connections in a loop
+        for {
+            c, err := listener.Accept()
+            if err != nil {
+                return
+            }
+            conn := c.(*minecraft.Conn)
+
+            // Handle each connection in a goroutine
+            go handleConnection(conn)
+        }
+    }
+
+    func handleConnection(conn *minecraft.Conn) {
+        defer conn.Close()
+        
+        // Start the game for this client
+        worldData := minecraft.GameData{}
+        if err := conn.StartGame(worldData); err != nil {
+            return
+        }
+        
+        fmt.Printf("Player %s connected\n", conn.IdentityData().DisplayName)
+
+        // Read packets from the client
+        for {
+            pk, err := conn.ReadPacket()
+            if err != nil {
+                break
+            }
+
+            switch p := pk.(type) {
+            case *packet.Emote:
+                fmt.Printf("Emote received: %v\n", p.EmoteID)
+            case *packet.MovePlayer:
+                fmt.Printf("%s moved to %v\n", conn.IdentityData().DisplayName, p.Position)
+            case *packet.Text:
+                fmt.Printf("<%s> %s\n", conn.IdentityData().DisplayName, p.Message)
+                
+                // Echo the message back
+                response := &packet.Text{
+                    TextType: packet.TextTypeChat,
+                    Message:  fmt.Sprintf("You said: %s", p.Message),
+                }
+                conn.WritePacket(response)
+            }
+        }
+        
+        fmt.Printf("Player %s disconnected\n", conn.IdentityData().DisplayName)
+    }
+    ```
+  </Step>
+  
+  <Step title="Run the Server">
+    ```bash
+    go run server.go
+    ```
+    
+    Your server is now running on port 19132! Connect to it from Minecraft using `localhost:19132` or your machine's IP address.
+  </Step>
+</Steps>
+
+<Info>
+The server will appear in the LAN games list in Minecraft Bedrock Edition. You can also add it manually using the server's IP address.
+</Info>
+
+### Understanding the Server Code
+
+| Component | Description |
+|-----------|-------------|
+| `minecraft.ListenConfig` | Configuration for the server listener |
+| `StatusProvider` | Defines the server name/MOTD shown in the server list |
+| `listener.Accept()` | Waits for and accepts new player connections |
+| `conn.StartGame()` | Sends game data and spawns the player |
+| `conn.IdentityData()` | Returns player identity information (name, UUID, etc.) |
+
+### Customizing Game Data
+
+The `minecraft.GameData` struct contains all world and game settings:
+
+```go
+worldData := minecraft.GameData{
+    WorldName: "My Custom World",
+    Difficulty: 2,  // Normal difficulty
+    GameType: 1,     // Creative mode
+    // ... many more fields available
+}
+conn.StartGame(worldData)
+```
+
+## Building a Proxy
+
+One of the most powerful uses of Gophertunnel is creating a MITM proxy. Here's the basic pattern:
+
+```go
+// Accept client connection
+clientConn, _ := listener.Accept()
+
+// Dial to the actual server
+serverConn, _ := dialer.Dial("raknet", "target-server.com:19132")
+
+// Forward packets bidirectionally
+go func() {
+    for {
+        pk, _ := clientConn.ReadPacket()
+        serverConn.WritePacket(pk)  // Forward to server
+    }
+}()
+
+go func() {
+    for {
+        pk, _ := serverConn.ReadPacket()
+        clientConn.WritePacket(pk)  // Forward to client
+    }
+}()
+```
+
+<Note>
+For a complete proxy implementation with proper error handling and game state management, see the [main.go](https://github.com/Sandertv/gophertunnel/blob/master/main.go) file in the Gophertunnel repository.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="book" href="https://pkg.go.dev/github.com/sandertv/gophertunnel" iconType="duotone">
+    Explore the complete API documentation
+  </Card>
+  
+  <Card title="Packet Types" icon="box" href="https://pkg.go.dev/github.com/sandertv/gophertunnel/minecraft/protocol/packet" iconType="duotone">
+    Browse all available packet types
+  </Card>
+</CardGroup>
+
+<Warning>
+Remember: Always use Gophertunnel responsibly and never for malicious purposes.
+</Warning>

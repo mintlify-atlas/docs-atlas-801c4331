@@ -1,0 +1,532 @@
+---
+title: 'Protocol Structures'
+description: 'Understand Minecraft Bedrock protocol data types and structures'
+---
+
+## Overview
+
+The `minecraft/protocol` package provides low-level data structures and encoding/decoding functions for the Minecraft Bedrock Edition protocol. These structures are used throughout the packet system.
+
+## Data Types
+
+### Primitive Types
+
+The protocol uses various integer and floating-point types:
+
+```go
+// Unsigned integers
+var u8 uint8   // 1 byte
+var u16 uint16 // 2 bytes (little-endian)
+var u32 uint32 // 4 bytes (little-endian)
+var u64 uint64 // 8 bytes (little-endian)
+
+// Signed integers  
+var i8 int8   // 1 byte
+var i16 int16 // 2 bytes (little-endian)
+var i32 int32 // 4 bytes (little-endian)
+var i64 int64 // 8 bytes (little-endian)
+
+// Floating point
+var f32 float32 // 4 bytes (IEEE 754)
+var f64 float64 // 8 bytes (IEEE 754)
+
+// Boolean
+var b bool // 1 byte (0 = false, 1 = true)
+```
+
+### Variable-Length Integers
+
+Varints use variable-length encoding to save space:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+// Write a varint32
+writer := protocol.NewWriter(buf, 0)
+value := int32(12345)
+writer.Varint32(&value)
+
+// Read a varint32  
+reader := protocol.NewReader(buf, 0, false)
+var result int32
+reader.Varint32(&result)
+```
+
+Available varint types:
+- `Varint32()` - Variable-length signed 32-bit integer
+- `Varuint32()` - Variable-length unsigned 32-bit integer
+- `Varint64()` - Variable-length signed 64-bit integer
+- `Varuint64()` - Variable-length unsigned 64-bit integer
+
+<Info>
+  Varints are more efficient for small numbers. A small varint32 uses only 1 byte, while a regular int32 always uses 4 bytes.
+</Info>
+
+### Strings
+
+Strings are encoded as a varuint32 length prefix followed by UTF-8 bytes:
+
+```go
+// Write string
+writer.String(&"Hello, world!")
+
+// Read string
+var text string
+reader.String(&text)
+```
+
+### Byte Slices
+
+Similar to strings, with length prefix:
+
+```go
+data := []byte{1, 2, 3, 4, 5}
+writer.ByteSlice(&data)
+
+var result []byte
+reader.ByteSlice(&result)
+```
+
+## Vector Types
+
+### Vec2
+
+2D vector using `mgl32.Vec2`:
+
+```go
+import "github.com/go-gl/mathgl/mgl32"
+
+position := mgl32.Vec2{10.5, 20.3}
+writer.Vec2(&position)
+
+var pos mgl32.Vec2
+reader.Vec2(&pos)
+// pos[0] = X coordinate
+// pos[1] = Y coordinate
+```
+
+### Vec3
+
+3D vector using `mgl32.Vec3`:
+
+```go
+position := mgl32.Vec3{100.0, 64.0, -50.0}
+writer.Vec3(&position)
+
+var pos mgl32.Vec3
+reader.Vec3(&pos)
+// pos[0] = X coordinate
+// pos[1] = Y coordinate  
+// pos[2] = Z coordinate
+```
+
+### BlockPos
+
+Block position using varint32 coordinates:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+blockPos := protocol.BlockPos{16, 64, -32}
+writer.BlockPos(&blockPos)
+
+var pos protocol.BlockPos
+reader.BlockPos(&pos)
+// pos[0] = X coordinate
+// pos[1] = Y coordinate
+// pos[2] = Z coordinate
+```
+
+### ChunkPos
+
+Chunk position (2D):
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+chunkPos := protocol.ChunkPos{5, -3}
+writer.ChunkPos(&chunkPos)
+
+var pos protocol.ChunkPos
+reader.ChunkPos(&pos)
+// pos[0] = X chunk coordinate
+// pos[1] = Z chunk coordinate
+```
+
+## UUID
+
+UUIDs use the `github.com/google/uuid` package:
+
+```go
+import "github.com/google/uuid"
+
+// Write UUID
+id := uuid.New()
+writer.UUID(&id)
+
+// Read UUID
+var playerID uuid.UUID
+reader.UUID(&playerID)
+```
+
+## NBT Data
+
+NBT (Named Binary Tag) is used for complex structured data:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/nbt"
+
+type PlayerData struct {
+    Name   string  `nbt:"name"`
+    Health float32 `nbt:"health"`
+    Pos    []float32 `nbt:"pos"`
+}
+
+// Encode NBT
+data := PlayerData{
+    Name:   "Steve",
+    Health: 20.0,
+    Pos:    []float32{0, 64, 0},
+}
+writer.NBT(&data, nbt.NetworkLittleEndian)
+
+// Decode NBT
+var result PlayerData
+reader.NBT(&result, nbt.NetworkLittleEndian)
+```
+
+NBT encoding formats:
+- `nbt.NetworkLittleEndian` - Used in most network packets
+- `nbt.LittleEndian` - Used in some packets
+- `nbt.BigEndian` - Rarely used in Bedrock Edition
+
+## Game Data Structures
+
+### Item Stacks
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+item := protocol.ItemStack{
+    ItemType: protocol.ItemType{
+        NetworkID:     1,  // Diamond
+        MetadataValue: 0,
+    },
+    Count:     64,
+    HasStack:  true,
+}
+```
+
+### Attributes
+
+```go
+attribute := protocol.Attribute{
+    Name:    "minecraft:health",
+    Value:   20.0,
+    Max:     20.0,
+    Min:     0.0,
+    Default: 20.0,
+}
+```
+
+### Game Rules
+
+```go
+gameRules := []protocol.GameRule{
+    {
+        Name:  "showcoordinates",
+        Value: true,
+    },
+    {
+        Name:  "dodaylightcycle",
+        Value: false,
+    },
+}
+```
+
+### Skin Data
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+skin := protocol.Skin{
+    SkinID:            "custom_skin",
+    SkinResourcePatch: skinPatch,
+    SkinImageWidth:    64,
+    SkinImageHeight:   64,
+    SkinData:          skinPixelData,
+    CapeImageWidth:    0,
+    CapeImageHeight:   0,
+    CapeData:          []byte{},
+    SkinGeometry:      geometryData,
+    AnimationData:     "",
+    Premium:           false,
+    Persona:           false,
+}
+```
+
+## Protocol Constants
+
+### Current Version
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+fmt.Println(protocol.CurrentProtocol) // e.g., 712
+fmt.Println(protocol.CurrentVersion)  // e.g., "1.21.50"
+```
+
+### Device Types
+
+```go
+const (
+    DeviceAndroid    = 1
+    DeviceIOS        = 2  
+    DeviceOSX        = 3
+    DeviceFireOS     = 4
+    DeviceGearVR     = 5
+    DeviceHololens   = 6
+    DeviceWin10      = 7
+    DeviceWin32      = 8
+    DeviceDedicated  = 9
+    DeviceTVOS       = 10
+    DevicePS4        = 11
+    DeviceNintendo   = 12
+    DeviceXbox       = 13
+    DeviceWindowsPhone = 14
+)
+```
+
+### Packet IDs
+
+Packet IDs are defined in `minecraft/protocol/packet/id.go`:
+
+```go
+const (
+    IDLogin                     = 1
+    IDPlayStatus                = 2
+    IDServerToClientHandshake   = 3
+    IDClientToServerHandshake   = 4
+    IDDisconnect                = 5
+    IDResourcePacksInfo         = 6
+    IDResourcePackStack         = 7
+    IDText                      = 9
+    IDStartGame                 = 11
+    IDMovePlayer                = 19
+    // ... many more
+)
+```
+
+## Reader and Writer
+
+### Creating Reader/Writer
+
+```go
+import (
+    "bytes"
+    "github.com/sandertv/gophertunnel/minecraft/protocol"
+)
+
+// Create a buffer
+buf := bytes.NewBuffer(nil)
+
+// Create writer
+shieldID := int32(0)
+writer := protocol.NewWriter(buf, shieldID)
+
+// Write data
+writer.Varuint32(&count)
+writer.String(&name)
+writer.Vec3(&position)
+
+// Create reader from data
+reader := protocol.NewReader(buf, shieldID, false)
+
+// Read data back
+var count uint32
+var name string  
+var position mgl32.Vec3
+reader.Varuint32(&count)
+reader.String(&name)
+reader.Vec3(&position)
+```
+
+### Error Handling
+
+Readers panic on errors (caught by deferred recovery in packet decoding):
+
+```go
+func decodePacket(data []byte) (err error) {
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("decode error: %v", r)
+        }
+    }()
+    
+    reader := protocol.NewReader(bytes.NewReader(data), 0, false)
+    
+    var value uint32
+    reader.Varuint32(&value) // Panics on invalid data
+    
+    return nil
+}
+```
+
+## Endianness
+
+Minecraft Bedrock Edition primarily uses **little-endian** encoding:
+
+```go
+// Little-endian (default)
+reader.Uint32(&value)       // Little-endian uint32
+writer.Uint32(&value)
+
+// Big-endian (explicit)
+reader.BigEndianUint32(&value)
+writer.BigEndianUint32(&value)
+```
+
+Specialized readers/writers are available:
+- `reader_little_endian.go` - Little-endian operations (most common)
+- `reader_big_endian.go` - Big-endian operations (rare)
+- `writer_little_endian.go` - Little-endian operations
+- `writer_big_endian.go` - Big-endian operations
+
+## Advanced Structures
+
+### Block States
+
+```go
+blockState := protocol.BlockState{
+    Name:       "minecraft:stone",
+    Properties: map[string]any{
+        "stone_type": "granite",
+    },
+    Version: 1,
+}
+```
+
+### Command Enums
+
+```go
+enum := protocol.CommandEnum{
+    Type:    "GameMode",
+    Options: []string{"survival", "creative", "adventure", "spectator"},
+}
+```
+
+### Abilities
+
+```go
+abilities := protocol.AbilityData{
+    Type:  protocol.AbilityBuild,
+    Value: protocol.AbilityBaseFalse | protocol.AbilityLayerEnabled,
+}
+```
+
+### Scoreboard Entries
+
+```go
+entry := protocol.ScoreboardEntry{
+    EntryID:    1,
+    ObjectiveName: "kills",
+    Score:      10,
+    Type:       protocol.ScoreboardEntryPlayer,
+    PlayerUUID: playerID,
+}
+```
+
+## Protocol Versioning
+
+Handle multiple protocol versions:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft"
+
+type customProtocol struct{}
+
+func (p customProtocol) ID() int32 {
+    return 712 // Protocol version
+}
+
+func (p customProtocol) Packets(serverSide bool) packet.Pool {
+    // Return packet pool for this protocol version
+    return packet.NewPool()
+}
+
+func (p customProtocol) ConvertToLatest(pk packet.Packet, conn *minecraft.Conn) []packet.Packet {
+    // Convert old packet format to latest
+    return []packet.Packet{pk}
+}
+
+func (p customProtocol) ConvertFromLatest(pk packet.Packet, conn *minecraft.Conn) []packet.Packet {
+    // Convert latest packet format to old
+    return []packet.Packet{pk}
+}
+```
+
+## Best Practices
+
+<Note>
+  Always use the high-level `Conn.ReadPacket()` and `Conn.WritePacket()` methods unless you have a specific reason to use low-level protocol operations.
+</Note>
+
+<Warning>
+  The `protocol` package uses pointer parameters for all read/write operations. Always pass pointers, not values.
+</Warning>
+
+### Good Example
+
+```go
+var count uint32
+reader.Varuint32(&count) // Correct: passing pointer
+```
+
+### Bad Example
+
+```go
+var count uint32
+reader.Varuint32(count) // Wrong: compiler error
+```
+
+## Complete Example
+
+Custom packet implementation:
+
+```go
+package mypackets
+
+import (
+    "github.com/sandertv/gophertunnel/minecraft/protocol"
+    "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+    "github.com/go-gl/mathgl/mgl32"
+)
+
+type CustomTeleport struct {
+    PlayerName string
+    Position   mgl32.Vec3
+    Yaw        float32
+    Pitch      float32
+}
+
+func (pk *CustomTeleport) ID() uint32 {
+    return 0x99 // Custom packet ID
+}
+
+func (pk *CustomTeleport) Marshal(io protocol.IO) {
+    io.String(&pk.PlayerName)
+    io.Vec3(&pk.Position)
+    io.Float32(&pk.Yaw)
+    io.Float32(&pk.Pitch)
+}
+
+// Usage
+func sendTeleport(conn *minecraft.Conn) {
+    conn.WritePacket(&CustomTeleport{
+        PlayerName: "Steve",
+        Position:   mgl32.Vec3{100, 64, 200},
+        Yaw:        90,
+        Pitch:      0,
+    })
+}
+```

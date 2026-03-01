@@ -1,0 +1,215 @@
+---
+title: text
+description: Minecraft text formatting and color utilities
+---
+
+The `minecraft/text` package provides utilities for formatting text with Minecraft color codes and converting them for display in terminals.
+
+## Functions
+
+### Clean
+
+```go
+func Clean(s string) string
+```
+
+Removes all Minecraft formatting codes from a string.
+
+<ParamField path="s" type="string">
+  The string containing Minecraft formatting codes (§)
+</ParamField>
+
+<ResponseField name="string">
+  The string with all formatting codes removed
+</ResponseField>
+
+### ANSI
+
+```go
+func ANSI(a ...any) string
+```
+
+Converts Minecraft formatting codes to ANSI terminal codes for proper display.
+
+<ParamField path="a" type="...any">
+  Values to convert (joined with spaces)
+</ParamField>
+
+<ResponseField name="string">
+  String with ANSI formatting codes
+</ResponseField>
+
+### Colourf
+
+```go
+func Colourf(format string, a ...any) string
+```
+
+Formats a string using HTML-style color tags that are converted to Minecraft formatting codes.
+
+<ParamField path="format" type="string">
+  Format string with HTML color tags
+</ParamField>
+
+<ParamField path="a" type="...any">
+  Values to substitute into the format string
+</ParamField>
+
+<ResponseField name="string">
+  String with Minecraft formatting codes (§)
+</ResponseField>
+
+## Color Constants
+
+Minecraft formatting codes as constants:
+
+```go
+const (
+    Black       = "§0"
+    DarkBlue    = "§1"
+    DarkGreen   = "§2"
+    DarkAqua    = "§3"
+    DarkRed     = "§4"
+    DarkPurple  = "§5"
+    Gold        = "§6"
+    Grey        = "§7"
+    DarkGrey    = "§8"
+    Blue        = "§9"
+    Green       = "§a"
+    Aqua        = "§b"
+    Red         = "§c"
+    Purple      = "§d"
+    Yellow      = "§e"
+    White       = "§f"
+    
+    // Formatting
+    Obfuscated  = "§k"
+    Bold        = "§l"
+    Italic      = "§o"
+    Reset       = "§r"
+)
+```
+
+## HTML Color Tags
+
+The following HTML tags are supported in `Colourf()`:
+
+### Basic Colors
+- `<black>`, `<dark-blue>`, `<dark-green>`, `<dark-aqua>`
+- `<dark-red>`, `<dark-purple>`, `<gold>`, `<grey>`
+- `<dark-grey>`, `<blue>`, `<green>`, `<aqua>`
+- `<red>`, `<purple>`, `<yellow>`, `<white>`
+
+### Material Colors
+- `<dark-yellow>`, `<quartz>`, `<iron>`, `<netherite>`
+- `<redstone>`, `<copper>`, `<gold>`, `<emerald>`
+- `<diamond>`, `<lapis>`, `<amethyst>`
+
+### Formatting
+- `<obfuscated>` - Scrambled text
+- `<bold>` or `<b>` - Bold text
+- `<italic>` or `<i>` - Italic text
+
+## Example Usage
+
+### Basic Formatting
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/text"
+
+// Using constants
+message := text.Red + "Error: " + text.Reset + "Something went wrong"
+
+// Clean formatting codes
+clean := text.Clean(message) // "Error: Something went wrong"
+```
+
+### HTML-Style Formatting
+
+```go
+// Simple colors
+msg := text.Colourf("<red>Error:</red> <white>File not found</white>")
+
+// Nested formatting
+msg = text.Colourf("<green>Success: <bold>Operation complete!</bold></green>")
+
+// With parameters
+player := "Steve"
+msg = text.Colourf("<yellow>Welcome, <bold>%s</bold>!</yellow>", player)
+
+// Multiple colors
+msg = text.Colourf(
+    "<red>Health: %d</red> <blue>Mana: %d</blue>",
+    health, mana,
+)
+```
+
+### Terminal Output
+
+```go
+// Convert to ANSI for terminal display
+msg := text.Red + "Error!" + text.Reset
+fmt.Println(text.ANSI(msg)) // Displays in red in terminal
+
+// Multiple values
+text.ANSI("Status:", text.Green+"Online"+text.Reset)
+```
+
+### Chat Messages
+
+```go
+// Send colored chat message
+err := conn.WritePacket(&packet.Text{
+    TextType: packet.TextTypeChat,
+    Message:  text.Colourf("<gold>%s joined the game</gold>", playerName),
+})
+```
+
+### Disconnect Messages
+
+```go
+// Colorful disconnect message
+listener.Disconnect(conn, text.Colourf(
+    "<red>You have been kicked!\n<white>Reason: %s</white></red>",
+    reason,
+))
+```
+
+### Material-Themed Messages
+
+```go
+msg := text.Colourf(
+    "<diamond>Diamond Sword</diamond> <grey>x1</grey>",
+)
+
+msg = text.Colourf(
+    "Rewards: <gold>10 Gold</gold>, <emerald>5 Emeralds</emerald>",
+)
+```
+
+### Complex Formatting
+
+```go
+msg := text.Colourf(`
+<bold><gold>==== Server Rules ====</gold></bold>
+<white>1. <green>Be respectful</green></white>
+<white>2. <red>No griefing</red></white>
+<white>3. <blue>Have fun!</blue></white>
+`)
+
+conn.WritePacket(&packet.Text{
+    TextType: packet.TextTypeRaw,
+    Message:  msg,
+})
+```
+
+### Cleaning User Input
+
+```go
+// Remove color codes from user input
+userInput := "§4Hacked§r message"
+safe := text.Clean(userInput) // "Hacked message"
+
+// Now safe to use
+broadcast(safe)
+```

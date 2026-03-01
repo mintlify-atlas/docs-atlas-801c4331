@@ -1,0 +1,243 @@
+---
+title: Creating a Minecraft Client
+description: Learn how to create a Minecraft Bedrock Edition client using Gophertunnel
+---
+
+This guide shows you how to create a Minecraft client that connects to servers using `minecraft.Dial()`.
+
+## Overview
+
+A Minecraft client connects to remote servers, spawns in the world, and can read/write packets to interact with the game. The client uses Microsoft authentication to connect to servers.
+
+## Basic Client Example
+
+<Steps>
+  <Step title="Import Required Packages">
+    ```go
+    import (
+        "fmt"
+        "github.com/sandertv/gophertunnel/minecraft"
+        "github.com/sandertv/gophertunnel/minecraft/auth"
+        "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+    )
+    ```
+  </Step>
+
+  <Step title="Create a Dialer with Authentication">
+    The `minecraft.Dialer` requires a `TokenSource` for authentication:
+
+    ```go
+    dialer := minecraft.Dialer{
+        TokenSource: auth.TokenSource,
+    }
+    ```
+
+    The `auth.TokenSource` handles Microsoft account authentication automatically.
+  </Step>
+
+  <Step title="Connect to a Server">
+    Use the dialer to connect to a server address:
+
+    ```go
+    address := "mco.mineplex.com:19132"
+    conn, err := dialer.Dial("raknet", address)
+    if err != nil {
+        panic(err)
+    }
+    defer conn.Close()
+    ```
+  </Step>
+
+  <Step title="Spawn in the World">
+    After connecting, spawn the client in the world:
+
+    ```go
+    if err := conn.DoSpawn(); err != nil {
+        panic(err)
+    }
+    ```
+
+    This is a blocking operation that waits for the spawn sequence to complete.
+  </Step>
+
+  <Step title="Handle Packets">
+    Read and write packets in a loop:
+
+    ```go
+    for {
+        // Read incoming packets
+        pk, err := conn.ReadPacket()
+        if err != nil {
+            break
+        }
+
+        // Handle specific packet types
+        switch p := pk.(type) {
+        case *packet.Emote:
+            fmt.Printf("Emote packet received: %v\n", p.EmoteID)
+        case *packet.MovePlayer:
+            fmt.Printf("Player %v moved to %v\n", p.EntityRuntimeID, p.Position)
+        }
+
+        // Write packets to the server
+        p := &packet.RequestChunkRadius{ChunkRadius: 32, MaxChunkRadius: 32}
+        if err := conn.WritePacket(p); err != nil {
+            break
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Complete Example
+
+Here's a complete working client:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/auth"
+    "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+)
+
+func main() {
+    // Create a minecraft.Dialer with an auth.TokenSource to authenticate to the server.
+    dialer := minecraft.Dialer{
+        TokenSource: auth.TokenSource,
+    }
+    // Dial a new connection to the target server.
+    address := "mco.mineplex.com:19132"
+    conn, err := dialer.Dial("raknet", address)
+    if err != nil {
+        panic(err)
+    }
+    defer conn.Close()
+
+    // Make the client spawn in the world: This is a blocking operation that will return an error if the
+    // client times out while spawning.
+    if err := conn.DoSpawn(); err != nil {
+        panic(err)
+    }
+
+    // You will then want to start a for loop that reads packets from the connection until it is closed.
+    for {
+        // Read a packet from the connection: ReadPacket returns an error if the connection is closed or if
+        // a read timeout is set. You will generally want to return or break if this happens.
+        pk, err := conn.ReadPacket()
+        if err != nil {
+            break
+        }
+
+        // The pk variable is of type packet.Packet, which may be type asserted to gain access to the data
+        // they hold:
+        switch p := pk.(type) {
+        case *packet.Emote:
+            fmt.Printf("Emote packet received: %v\n", p.EmoteID)
+        case *packet.MovePlayer:
+            fmt.Printf("Player %v moved to %v\n", p.EntityRuntimeID, p.Position)
+        }
+
+        // Write a packet to the connection: Similarly to ReadPacket, WritePacket will (only) return an error
+        // if the connection is closed.
+        p := &packet.RequestChunkRadius{ChunkRadius: 32, MaxChunkRadius: 32}
+        if err := conn.WritePacket(p); err != nil {
+            break
+        }
+    }
+}
+```
+
+## Authentication
+
+### Using Token Source
+
+The default `auth.TokenSource` handles authentication automatically:
+
+```go
+dialer := minecraft.Dialer{
+    TokenSource: auth.TokenSource,
+}
+```
+
+### Using Custom Tokens
+
+You can also use custom OAuth2 tokens:
+
+```go
+token, err := auth.RequestLiveToken()
+if err != nil {
+    panic(err)
+}
+
+dialer := minecraft.Dialer{
+    TokenSource: auth.RefreshTokenSource(token),
+}
+```
+
+## Connection Options
+
+The `minecraft.Dialer` supports several configuration options:
+
+```go
+dialer := minecraft.Dialer{
+    // Required: Token source for authentication
+    TokenSource: auth.TokenSource,
+    
+    // Optional: Custom client data
+    ClientData: minecraft.ClientData{
+        DeviceID:    "custom-device-id",
+        DeviceModel: "Custom Device",
+        GameVersion: "1.21.0",
+    },
+}
+```
+
+## Error Handling
+
+### Connection Errors
+
+```go
+conn, err := dialer.Dial("raknet", address)
+if err != nil {
+    // Handle connection failure
+    fmt.Printf("Failed to connect: %v\n", err)
+    return
+}
+```
+
+### Spawn Errors
+
+```go
+if err := conn.DoSpawn(); err != nil {
+    // Handle spawn timeout or rejection
+    fmt.Printf("Failed to spawn: %v\n", err)
+    return
+}
+```
+
+### Disconnection
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft"
+
+for {
+    pk, err := conn.ReadPacket()
+    if err != nil {
+        var disc minecraft.DisconnectError
+        if errors.As(err, &disc) {
+            fmt.Printf("Disconnected: %v\n", disc.Error())
+        }
+        break
+    }
+    // Process packet...
+}
+```
+
+## Next Steps
+
+- Learn about [creating a server](/guides/server)
+- Build a [proxy](/guides/proxy) to intercept packets
+- Explore the [packet protocol](/api/packets)

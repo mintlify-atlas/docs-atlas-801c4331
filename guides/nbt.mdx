@@ -1,0 +1,483 @@
+---
+title: NBT Encoding and Decoding
+description: Learn how to encode and decode Minecraft NBT (Named Binary Tag) data
+---
+
+This guide covers working with NBT (Named Binary Tag) format using the `minecraft/nbt` package. NBT is Minecraft's binary data format used for world data, entities, items, and more.
+
+## Overview
+
+The `minecraft/nbt` package provides:
+- Encoding Go structs/maps to NBT binary format
+- Decoding NBT binary data to Go structs/maps
+- Multiple encoding variants (NetworkLittleEndian, NetworkBigEndian, JavaEdition)
+- Streaming encoder/decoder for efficient processing
+
+## Type Mappings
+
+### Go Types to NBT Tags
+
+| Go Type | NBT Tag |
+|---------|----------|
+| `byte`/`uint8` | TAG_Byte |
+| `bool` | TAG_Byte |
+| `int16` | TAG_Short |
+| `int32` | TAG_Int |
+| `int64` | TAG_Long |
+| `float32` | TAG_Float |
+| `float64` | TAG_Double |
+| `[...]byte` | TAG_ByteArray |
+| `[...]int32` | TAG_IntArray |
+| `[...]int64` | TAG_LongArray |
+| `string` | TAG_String |
+| `[]<type>` | TAG_List |
+| `struct{...}` | TAG_Compound |
+| `map[string]<type>` | TAG_Compound |
+
+## Basic Encoding
+
+<Steps>
+  <Step title="Import the Package">
+    ```go
+    import "github.com/sandertv/gophertunnel/minecraft/nbt"
+    ```
+  </Step>
+
+  <Step title="Define a Struct">
+    Create a Go struct with NBT tags:
+
+    ```go
+    type PlayerData struct {
+        Name     string
+        Health   int16
+        Position [3]float64
+        Inventory []Item `nbt:"Items"`
+    }
+
+    type Item struct {
+        ID    string
+        Count byte
+    }
+    ```
+  </Step>
+
+  <Step title="Encode to NBT">
+    Use `Marshal` to encode:
+
+    ```go
+    player := PlayerData{
+        Name:     "Steve",
+        Health:   20,
+        Position: [3]float64{100.0, 64.0, 200.0},
+        Inventory: []Item{
+            {ID: "minecraft:diamond", Count: 64},
+            {ID: "minecraft:iron_ingot", Count: 32},
+        },
+    }
+
+    data, err := nbt.Marshal(player)
+    if err != nil {
+        panic(err)
+    }
+    ```
+  </Step>
+</Steps>
+
+## Basic Decoding
+
+<Steps>
+  <Step title="Define Target Struct">
+    Create a struct to decode into:
+
+    ```go
+    var player PlayerData
+    ```
+  </Step>
+
+  <Step title="Decode from NBT">
+    Use `Unmarshal` to decode:
+
+    ```go
+    err := nbt.Unmarshal(data, &player)
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Player: %s\n", player.Name)
+    fmt.Printf("Health: %d\n", player.Health)
+    ```
+  </Step>
+</Steps>
+
+## Struct Tags
+
+### Field Naming
+
+Use `nbt` tags to control field names:
+
+```go
+type Entity struct {
+    Position [3]float64 `nbt:"Pos"`        // NBT name: "Pos"
+    Motion   [3]float64 `nbt:"Motion"`    // NBT name: "Motion"
+    Rotation [2]float32 `nbt:"Rotation"`  // NBT name: "Rotation"
+}
+```
+
+### Omit Empty
+
+Skip zero-value fields:
+
+```go
+type Item struct {
+    ID         string `nbt:"id"`
+    Count      byte   `nbt:"Count"`
+    Damage     int16  `nbt:"Damage,omitempty"`     // Omit if 0
+    CustomName string `nbt:"CustomName,omitempty"` // Omit if ""
+}
+```
+
+### Ignore Fields
+
+Exclude fields from encoding/decoding:
+
+```go
+type Player struct {
+    Name     string
+    Health   int16
+    Internal string `nbt:"-"` // Never encoded/decoded
+}
+```
+
+## Encoding Variants
+
+### Network Little Endian (Default)
+
+Used for Bedrock Edition network protocol:
+
+```go
+data, err := nbt.Marshal(value)
+// Or explicitly:
+data, err := nbt.MarshalEncoding(value, nbt.NetworkLittleEndian)
+```
+
+### Network Big Endian
+
+Used for Java Edition network protocol:
+
+```go
+data, err := nbt.MarshalEncoding(value, nbt.NetworkBigEndian)
+```
+
+### File Encoding
+
+For reading/writing world files:
+
+```go
+// Bedrock files typically use little endian
+data, err := nbt.MarshalEncoding(value, nbt.LittleEndian)
+```
+
+## Streaming API
+
+### Encoder
+
+For writing to streams:
+
+```go
+import "os"
+
+file, err := os.Create("data.nbt")
+if err != nil {
+    panic(err)
+}
+defer file.Close()
+
+encoder := nbt.NewEncoder(file)
+encoder.Encoding = nbt.NetworkLittleEndian
+
+err = encoder.Encode(player)
+if err != nil {
+    panic(err)
+}
+```
+
+### Decoder
+
+For reading from streams:
+
+```go
+file, err := os.Open("data.nbt")
+if err != nil {
+    panic(err)
+}
+defer file.Close()
+
+decoder := nbt.NewDecoder(file)
+decoder.Encoding = nbt.NetworkLittleEndian
+
+var player PlayerData
+err = decoder.Decode(&player)
+if err != nil {
+    panic(err)
+}
+```
+
+### Custom Encoding
+
+```go
+import "bytes"
+
+buf := new(bytes.Buffer)
+encoder := nbt.NewEncoderWithEncoding(buf, nbt.NetworkBigEndian)
+
+err := encoder.Encode(data)
+if err != nil {
+    panic(err)
+}
+```
+
+## Working with Maps
+
+### Dynamic Data
+
+Use maps for unknown structure:
+
+```go
+var data map[string]any
+
+err := nbt.Unmarshal(nbtData, &data)
+if err != nil {
+    panic(err)
+}
+
+// Access fields dynamically
+if name, ok := data["Name"].(string); ok {
+    fmt.Printf("Name: %s\n", name)
+}
+
+if health, ok := data["Health"].(int16); ok {
+    fmt.Printf("Health: %d\n", health)
+}
+```
+
+### Encoding Maps
+
+```go
+data := map[string]any{
+    "Name":   "Steve",
+    "Health": int16(20),
+    "Position": [3]float64{100.0, 64.0, 200.0},
+}
+
+nbtData, err := nbt.Marshal(data)
+if err != nil {
+    panic(err)
+}
+```
+
+## Array Types
+
+### Byte Arrays
+
+```go
+type Block struct {
+    BlockData [16]byte `nbt:"BlockData"` // TAG_ByteArray
+}
+```
+
+### Int Arrays
+
+```go
+type Chunk struct {
+    BlockIDs [4096]int32 `nbt:"Blocks"` // TAG_IntArray
+}
+```
+
+### Long Arrays
+
+```go
+type Palette struct {
+    States [256]int64 `nbt:"States"` // TAG_LongArray
+}
+```
+
+## Lists
+
+### Homogeneous Lists
+
+Lists must contain elements of the same type:
+
+```go
+type Inventory struct {
+    Items []Item `nbt:"Items"` // TAG_List of TAG_Compound
+}
+
+type Colors struct {
+    RGB []int32 `nbt:"Colors"` // TAG_List of TAG_Int
+}
+```
+
+### Empty Lists
+
+```go
+type Container struct {
+    Items []Item `nbt:"Items"` // Empty list is allowed
+}
+
+container := Container{
+    Items: []Item{}, // Empty slice
+}
+```
+
+## Complete Examples
+
+### World Entity
+
+```go
+type Entity struct {
+    ID         string      `nbt:"id"`
+    Position   [3]float64  `nbt:"Pos"`
+    Motion     [3]float64  `nbt:"Motion"`
+    Rotation   [2]float32  `nbt:"Rotation"`
+    OnGround   bool        `nbt:"OnGround"`
+    Health     int16       `nbt:"Health"`
+    CustomName string      `nbt:"CustomName,omitempty"`
+    Tags       []string    `nbt:"Tags"`
+}
+
+entity := Entity{
+    ID:       "minecraft:zombie",
+    Position: [3]float64{100.5, 64.0, 200.5},
+    Motion:   [3]float64{0.0, -0.08, 0.0},
+    Rotation: [2]float32{45.0, 0.0},
+    OnGround: true,
+    Health:   20,
+    Tags:     []string{"mob", "hostile"},
+}
+
+data, err := nbt.Marshal(entity)
+if err != nil {
+    panic(err)
+}
+```
+
+### Player Inventory
+
+```go
+type PlayerInventory struct {
+    Size  int32  `nbt:"Size"`
+    Items []Item `nbt:"Items"`
+}
+
+type Item struct {
+    Slot       byte   `nbt:"Slot"`
+    ID         string `nbt:"id"`
+    Count      byte   `nbt:"Count"`
+    Damage     int16  `nbt:"Damage,omitempty"`
+    CustomName string `nbt:"display.Name,omitempty"`
+}
+
+inventory := PlayerInventory{
+    Size: 36,
+    Items: []Item{
+        {Slot: 0, ID: "minecraft:diamond_sword", Count: 1, CustomName: "Excalibur"},
+        {Slot: 1, ID: "minecraft:diamond", Count: 64},
+    },
+}
+
+data, err := nbt.Marshal(inventory)
+if err != nil {
+    panic(err)
+}
+```
+
+### Decode Unknown Structure
+
+```go
+import "fmt"
+
+// Read NBT with unknown structure
+var data map[string]any
+err := nbt.Unmarshal(nbtData, &data)
+if err != nil {
+    panic(err)
+}
+
+// Recursively print structure
+func printNBT(data any, indent int) {
+    prefix := strings.Repeat("  ", indent)
+    
+    switch v := data.(type) {
+    case map[string]any:
+        for key, value := range v {
+            fmt.Printf("%s%s:\n", prefix, key)
+            printNBT(value, indent+1)
+        }
+    case []any:
+        for i, value := range v {
+            fmt.Printf("%s[%d]:\n", prefix, i)
+            printNBT(value, indent+1)
+        }
+    default:
+        fmt.Printf("%s%v (%T)\n", prefix, v, v)
+    }
+}
+
+printNBT(data, 0)
+```
+
+## Error Handling
+
+### Encoding Errors
+
+```go
+data, err := nbt.Marshal(value)
+if err != nil {
+    switch e := err.(type) {
+    case nbt.IncompatibleTypeError:
+        fmt.Printf("Incompatible type: %v\n", e.Type)
+    case nbt.MaximumDepthReachedError:
+        fmt.Println("NBT structure too deep")
+    default:
+        fmt.Printf("Encoding error: %v\n", err)
+    }
+}
+```
+
+### Decoding Errors
+
+```go
+err := nbt.Unmarshal(data, &value)
+if err != nil {
+    switch e := err.(type) {
+    case nbt.InvalidTypeError:
+        fmt.Printf("Invalid type for field %s\n", e.Field)
+    case nbt.BufferOverrunError:
+        fmt.Println("Incomplete NBT data")
+    case nbt.UnexpectedNamedTagError:
+        fmt.Printf("Unexpected tag: %s\n", e.TagName)
+    default:
+        fmt.Printf("Decoding error: %v\n", err)
+    }
+}
+```
+
+## Best Practices
+
+1. **Use Structs**: Prefer structs over maps for known structures
+2. **Tag Fields**: Use `nbt` tags to match Minecraft's NBT format
+3. **Handle Errors**: Always check encoding/decoding errors
+4. **Use Correct Encoding**: Use `NetworkLittleEndian` for Bedrock network data
+5. **Validate Data**: Validate decoded data before using it
+
+## Performance Tips
+
+1. **Stream Large Data**: Use `Encoder`/`Decoder` for large files
+2. **Reuse Buffers**: The package uses buffer pools internally
+3. **Avoid Deep Nesting**: Deep NBT structures are slower to process
+
+## Next Steps
+
+- Learn about [packet encoding](/api/packets)
+- Understand [world data formats](/guides/server)
+- Build tools to [inspect NBT data](/guides/proxy)

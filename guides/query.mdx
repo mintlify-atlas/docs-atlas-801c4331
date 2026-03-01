@@ -1,0 +1,373 @@
+---
+title: Server Querying
+description: Learn how to query Minecraft server status using the UT3 query protocol
+---
+
+This guide covers querying Minecraft Bedrock Edition servers using the `query` package, which implements the UT3 (Unreal Tournament 3) query protocol.
+
+## Overview
+
+The query protocol allows you to retrieve server information without connecting as a client. It provides:
+- Server name (MOTD)
+- Game mode and type
+- Current player count and max players
+- Player list
+- Server version
+- Map name
+
+<Note>
+Not all servers support querying. Servers must explicitly enable the query protocol in their configuration.
+</Note>
+
+## Basic Usage
+
+<Steps>
+  <Step title="Import the Package">
+    ```go
+    import "github.com/sandertv/gophertunnel/query"
+    ```
+  </Step>
+
+  <Step title="Query a Server">
+    Use the `Do` function to query a server:
+
+    ```go
+    info, err := query.Do("play.cubecraft.net:19132")
+    if err != nil {
+        // Server doesn't support query or is offline
+        panic(err)
+    }
+
+    // info is a map[string]string containing server information
+    ```
+  </Step>
+
+  <Step title="Access Server Information">
+    Read values from the returned map:
+
+    ```go
+    fmt.Printf("Server: %s\n", info["hostname"])
+    fmt.Printf("Game Type: %s\n", info["gametype"])
+    fmt.Printf("Players: %s/%s\n", info["numplayers"], info["maxplayers"])
+    fmt.Printf("Map: %s\n", info["map"])
+    ```
+  </Step>
+</Steps>
+
+## Complete Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/sandertv/gophertunnel/query"
+)
+
+func main() {
+    // Query a server at the specified address
+    address := "play.cubecraft.net:19132"
+    
+    fmt.Printf("Querying %s...\n", address)
+    info, err := query.Do(address)
+    if err != nil {
+        fmt.Printf("Query failed: %v\n", err)
+        return
+    }
+
+    // Display server information
+    fmt.Println("\nServer Information:")
+    fmt.Println("==================")
+    fmt.Printf("Name:        %s\n", info["hostname"])
+    fmt.Printf("Game Type:   %s\n", info["gametype"])
+    fmt.Printf("Game Mode:   %s\n", info["game_id"])
+    fmt.Printf("Version:     %s\n", info["version"])
+    fmt.Printf("Map:         %s\n", info["map"])
+    fmt.Printf("Players:     %s/%s\n", info["numplayers"], info["maxplayers"])
+    
+    // Player list (if available)
+    if players, ok := info["players"]; ok && players != "" {
+        fmt.Printf("Online:      %s\n", players)
+    }
+}
+```
+
+## Response Fields
+
+The query response typically contains these fields:
+
+| Field | Description | Example |
+|-------|-------------|----------|
+| `hostname` | Server name/MOTD | `"CubeCraft Games"` |
+| `gametype` | Game type | `"SMP"` |
+| `game_id` | Game mode identifier | `"MINECRAFTPE"` |
+| `version` | Server version | `"1.21.0"` |
+| `map` | World/map name | `"world"` |
+| `numplayers` | Current player count | `"150"` |
+| `maxplayers` | Maximum players | `"500"` |
+| `hostport` | Server port | `"19132"` |
+| `hostip` | Server IP | `"192.168.1.1"` |
+| `players` | Comma-separated player list | `"Steve,Alex,Herobrine"` |
+
+### Accessing Fields
+
+```go
+info, err := query.Do(address)
+if err != nil {
+    panic(err)
+}
+
+// Check if a field exists
+if serverName, ok := info["hostname"]; ok {
+    fmt.Printf("Server: %s\n", serverName)
+} else {
+    fmt.Println("Server name not available")
+}
+
+// Convert numeric fields
+import "strconv"
+
+if numPlayersStr, ok := info["numplayers"]; ok {
+    numPlayers, err := strconv.Atoi(numPlayersStr)
+    if err == nil {
+        fmt.Printf("Players online: %d\n", numPlayers)
+    }
+}
+```
+
+## Timeout and Errors
+
+### Default Timeout
+
+The `Do` function has a built-in 5-second timeout:
+
+```go
+info, err := query.Do(address)
+if err != nil {
+    // Query timed out or server doesn't support queries
+    fmt.Printf("Failed: %v\n", err)
+}
+```
+
+### Common Errors
+
+```go
+info, err := query.Do(address)
+if err != nil {
+    // Server offline or doesn't support queries
+    fmt.Println("Server is not queryable")
+    return
+}
+```
+
+Reasons for query failure:
+- Server has query disabled
+- Server is offline
+- Network timeout
+- Firewall blocking query port
+- Wrong address or port
+
+## Query Protocol Details
+
+### How It Works
+
+The query protocol operates over UDP:
+
+1. **Handshake Request**: Client sends handshake packet
+2. **Handshake Response**: Server responds with challenge token
+3. **Information Request**: Client requests full server info
+4. **Information Response**: Server sends detailed information
+
+### Implementation
+
+The `query.Do` function handles this automatically:
+
+```go
+func Do(address string) (information map[string]string, err error) {
+    // 1. Connect via UDP
+    conn, err := net.Dial("udp", address)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 2. Set 5-second deadline
+    conn.SetDeadline(time.Now().Add(time.Second * 5))
+    
+    // 3. Send handshake
+    // 4. Receive challenge token
+    // 5. Send info request with token
+    // 6. Receive and parse response
+    
+    return information, nil
+}
+```
+
+## Practical Use Cases
+
+### Server Status Checker
+
+```go
+func checkServerStatus(address string) {
+    info, err := query.Do(address)
+    if err != nil {
+        fmt.Printf("❌ %s is offline\n", address)
+        return
+    }
+    
+    fmt.Printf("✅ %s is online\n", address)
+    fmt.Printf("   %s players online\n", info["numplayers"])
+}
+```
+
+### Server List
+
+```go
+type ServerInfo struct {
+    Address    string
+    Name       string
+    Players    int
+    MaxPlayers int
+    Version    string
+}
+
+func queryServers(addresses []string) []ServerInfo {
+    var servers []ServerInfo
+    
+    for _, addr := range addresses {
+        info, err := query.Do(addr)
+        if err != nil {
+            continue // Skip offline servers
+        }
+        
+        players, _ := strconv.Atoi(info["numplayers"])
+        maxPlayers, _ := strconv.Atoi(info["maxplayers"])
+        
+        servers = append(servers, ServerInfo{
+            Address:    addr,
+            Name:       info["hostname"],
+            Players:    players,
+            MaxPlayers: maxPlayers,
+            Version:    info["version"],
+        })
+    }
+    
+    return servers
+}
+```
+
+### Player Count Monitor
+
+```go
+import "time"
+
+func monitorPlayerCount(address string, interval time.Duration) {
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        info, err := query.Do(address)
+        if err != nil {
+            fmt.Printf("[%s] Query failed\n", time.Now().Format("15:04:05"))
+            continue
+        }
+        
+        fmt.Printf("[%s] %s: %s/%s players\n",
+            time.Now().Format("15:04:05"),
+            info["hostname"],
+            info["numplayers"],
+            info["maxplayers"])
+    }
+}
+
+// Usage
+monitorPlayerCount("play.cubecraft.net:19132", 30*time.Second)
+```
+
+### Find Available Servers
+
+```go
+func findAvailableServers(addresses []string) []string {
+    var available []string
+    
+    for _, addr := range addresses {
+        if _, err := query.Do(addr); err == nil {
+            available = append(available, addr)
+        }
+    }
+    
+    return available
+}
+
+servers := []string{
+    "play.cubecraft.net:19132",
+    "mco.mineplex.com:19132",
+    "play.hivemc.com:19132",
+}
+
+available := findAvailableServers(servers)
+fmt.Printf("Found %d available servers\n", len(available))
+```
+
+## Comparison with Ping
+
+### Query Protocol
+
+Advantages:
+- Detailed server information
+- Player list
+- Game mode and map name
+
+Disadvantages:
+- Requires server-side configuration
+- Slower (5-second timeout)
+- Not supported by all servers
+
+### RakNet Ping
+
+For basic server status without query:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft"
+
+// RakNet ping is faster and works on all servers
+// but provides less information
+status, err := minecraft.Ping(address)
+if err != nil {
+    panic(err)
+}
+
+fmt.Printf("%s: %d/%d players\n",
+    status.ServerName,
+    status.PlayerCount,
+    status.MaxPlayers)
+```
+
+## Enabling Query on Your Server
+
+To enable query on a Bedrock Dedicated Server, edit `server.properties`:
+
+```properties
+enable-query=true
+query.port=19132
+```
+
+## Best Practices
+
+1. **Handle Errors**: Always check for query errors
+2. **Validate Data**: Server responses may contain unexpected values
+3. **Rate Limiting**: Don't query too frequently to avoid being blocked
+4. **Fallback**: Use RakNet ping if query fails
+5. **Timeouts**: The 5-second timeout is reasonable for most networks
+
+## Limitations
+
+1. **Server Support**: Not all servers enable query
+2. **Firewall Issues**: Query may be blocked by firewalls
+3. **No Real-time Updates**: Requires repeated queries for monitoring
+4. **UDP Only**: Uses UDP protocol (no TCP alternative)
+
+## Next Steps
+
+- Learn about [connecting as a client](/guides/client)
+- Build a [server status webpage](/guides/server)
+- Create a [server browser tool](/guides/proxy)

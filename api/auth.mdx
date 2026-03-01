@@ -1,0 +1,149 @@
+---
+title: auth
+description: Microsoft Live Connect, XBOX Live, and Minecraft authentication
+---
+
+The `minecraft/auth` package implements authentication to Microsoft Live Connect, XBOX Live, and Minecraft accounts. It provides OAuth2-style token sources for device authentication.
+
+## Functions
+
+### RequestMinecraftChain
+
+```go
+func RequestMinecraftChain(ctx context.Context, token *XBLToken, key *ecdsa.PrivateKey) (string, error)
+```
+
+Requests a fully processed Minecraft JWT chain using an XSTS token and ECDSA private key. This chain is used during the login sequence for authentication.
+
+<ParamField path="ctx" type="context.Context">
+  Context for the HTTP request
+</ParamField>
+
+<ParamField path="token" type="*XBLToken">
+  The XBOX Live token to use for authentication
+</ParamField>
+
+<ParamField path="key" type="*ecdsa.PrivateKey">
+  The client's ECDSA private key (used for encryption initialization)
+</ParamField>
+
+<ResponseField name="string">
+  The encoded JWT chain ready for use in a login request
+</ResponseField>
+
+<ResponseField name="error">
+  Error if the request fails
+</ResponseField>
+
+### RequestXBLToken
+
+```go
+func RequestXBLToken(ctx context.Context, liveToken *oauth2.Token, relyingParty string) (*XBLToken, error)
+```
+
+Requests an XBOX Live token using a Microsoft Live Connect token.
+
+<ParamField path="ctx" type="context.Context">
+  Context for the HTTP request
+</ParamField>
+
+<ParamField path="liveToken" type="*oauth2.Token">
+  The Microsoft Live Connect access token
+</ParamField>
+
+<ParamField path="relyingParty" type="string">
+  The relying party URI (typically "https://multiplayer.minecraft.net/")
+</ParamField>
+
+<ResponseField name="*XBLToken">
+  The XBOX Live token that can be used for Minecraft authentication
+</ResponseField>
+
+## Types
+
+### XBLToken
+
+```go
+type XBLToken struct {
+    Token        string
+    UserHash     string
+    AuthorizationHeaderValue string
+    ExpiresOn    time.Time
+}
+```
+
+Represents an XBOX Live authentication token.
+
+#### Methods
+
+##### Valid
+
+```go
+func (t *XBLToken) Valid() bool
+```
+
+Returns whether the token is still valid (not expired).
+
+##### SetAuthHeader
+
+```go
+func (t *XBLToken) SetAuthHeader(req *http.Request)
+```
+
+Sets the authorization header on an HTTP request using the token.
+
+## Token Sources
+
+The package provides OAuth2-compatible token sources for device authentication:
+
+### TokenSource
+
+```go
+func TokenSource(timeout time.Duration) oauth2.TokenSource
+```
+
+Creates a token source that uses device authentication flow. The user must visit a URL and enter a code to authenticate.
+
+<ParamField path="timeout" type="time.Duration">
+  Maximum time to wait for user authentication
+</ParamField>
+
+<ResponseField name="oauth2.TokenSource">
+  A token source that can be used with minecraft.Dialer
+</ResponseField>
+
+## Example Usage
+
+### Device Authentication
+
+```go
+import (
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/auth"
+    "time"
+)
+
+// Create a token source with device auth
+tokenSource := auth.TokenSource(time.Minute * 5)
+
+// Use it with a dialer
+dialer := minecraft.Dialer{
+    TokenSource: tokenSource,
+}
+
+conn, err := dialer.Dial("raknet", "localhost:19132")
+if err != nil {
+    panic(err)
+}
+defer conn.Close()
+```
+
+### Using Existing XBL Token
+
+```go
+dialer := minecraft.Dialer{
+    XBLToken: myExistingToken,
+}
+
+conn, err := dialer.Dial("raknet", "localhost:19132")
+```

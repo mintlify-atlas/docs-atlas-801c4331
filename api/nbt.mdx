@@ -1,0 +1,241 @@
+---
+title: nbt
+description: NBT encoding and decoding for Minecraft Bedrock and Java Edition
+---
+
+The `minecraft/nbt` package implements NBT (Named Binary Tag) formats used by Minecraft. It supports little endian, big endian, and varint-based network formats.
+
+## Encoding Functions
+
+### Marshal
+
+```go
+func Marshal(v any) ([]byte, error)
+```
+
+Encodes a Go value to NBT format using NetworkLittleEndian encoding.
+
+<ParamField path="v" type="any">
+  The value to encode (must be a supported type)
+</ParamField>
+
+<ResponseField name="[]byte">
+  The encoded NBT data
+</ResponseField>
+
+<ResponseField name="error">
+  Error if encoding fails
+</ResponseField>
+
+### MarshalEncoding
+
+```go
+func MarshalEncoding(v any, encoding Encoding) ([]byte, error)
+```
+
+Encodes a value using a specific NBT encoding variant.
+
+<ParamField path="v" type="any">
+  The value to encode
+</ParamField>
+
+<ParamField path="encoding" type="Encoding">
+  The NBT encoding to use (NetworkLittleEndian, LittleEndian, or BigEndian)
+</ParamField>
+
+## Decoding Functions
+
+### Unmarshal
+
+```go
+func Unmarshal(data []byte, v any) error
+```
+
+Decodes NBT data into a Go value using NetworkLittleEndian encoding.
+
+<ParamField path="data" type="[]byte">
+  The NBT data to decode
+</ParamField>
+
+<ParamField path="v" type="any">
+  Pointer to the value to decode into
+</ParamField>
+
+<ResponseField name="error">
+  Error if decoding fails
+</ResponseField>
+
+### UnmarshalEncoding
+
+```go
+func UnmarshalEncoding(data []byte, v any, encoding Encoding) error
+```
+
+Decodes NBT data using a specific encoding variant.
+
+## Streaming Encoders/Decoders
+
+### Encoder
+
+```go
+type Encoder struct {
+    Encoding Encoding
+}
+```
+
+Writes NBT objects to an output stream.
+
+#### NewEncoder
+
+```go
+func NewEncoder(w io.Writer) *Encoder
+```
+
+Creates a new encoder that writes to the given writer.
+
+#### NewEncoderWithEncoding
+
+```go
+func NewEncoderWithEncoding(w io.Writer, encoding Encoding) *Encoder
+```
+
+Creates an encoder with a specific encoding.
+
+#### Encode
+
+```go
+func (e *Encoder) Encode(v any) error
+```
+
+Encodes a value and writes it to the output stream.
+
+### Decoder
+
+```go
+type Decoder struct {
+    Encoding  Encoding
+    AllowZero bool
+}
+```
+
+Reads NBT objects from an input stream.
+
+#### NewDecoder
+
+```go
+func NewDecoder(r io.Reader) *Decoder
+```
+
+Creates a new decoder that reads from the given reader.
+
+#### NewDecoderWithEncoding
+
+```go
+func NewDecoderWithEncoding(r io.Reader, encoding Encoding) *Decoder
+```
+
+Creates a decoder with a specific encoding.
+
+#### Decode
+
+```go
+func (d *Decoder) Decode(v any) error
+```
+
+Reads the next NBT object and decodes it into the given value.
+
+## Encoding Variants
+
+```go
+var (
+    NetworkLittleEndian Encoding // Network variant (default)
+    LittleEndian        Encoding // Bedrock Edition file format
+    BigEndian           Encoding // Java Edition format
+)
+```
+
+## Type Mappings
+
+NBT tags map to Go types as follows:
+
+| NBT Tag | Go Type |
+|---------|--------|
+| TAG_Byte | byte, uint8, bool |
+| TAG_Short | int16 |
+| TAG_Int | int32 |
+| TAG_Long | int64 |
+| TAG_Float | float32 |
+| TAG_Double | float64 |
+| TAG_ByteArray | [...]byte (array, not slice) |
+| TAG_String | string |
+| TAG_List | []T (slice of any type) |
+| TAG_Compound | struct, map[string]T |
+| TAG_IntArray | [...]int32 (array, not slice) |
+| TAG_LongArray | [...]int64 (array, not slice) |
+
+## Struct Tags
+
+The `nbt` struct tag controls field behavior:
+
+```go
+type Example struct {
+    Name   string `nbt:"name"`          // Use different NBT name
+    Value  int32  `nbt:"value,omitempty"` // Omit if zero value
+    Ignore string `nbt:"-"`              // Never encode/decode
+}
+```
+
+## Example Usage
+
+### Marshal/Unmarshal
+
+```go
+type PlayerData struct {
+    Name   string
+    Health int32
+    Pos    [3]float64
+}
+
+// Encode
+data := PlayerData{
+    Name:   "Steve",
+    Health: 20,
+    Pos:    [3]float64{0, 64, 0},
+}
+encoded, err := nbt.Marshal(data)
+if err != nil {
+    panic(err)
+}
+
+// Decode
+var decoded PlayerData
+err = nbt.Unmarshal(encoded, &decoded)
+if err != nil {
+    panic(err)
+}
+```
+
+### Stream Encoding
+
+```go
+var buf bytes.Buffer
+enc := nbt.NewEncoder(&buf)
+
+err := enc.Encode(data)
+if err != nil {
+    panic(err)
+}
+```
+
+### Using Different Encodings
+
+```go
+// For Java Edition compatibility
+encoded, err := nbt.MarshalEncoding(data, nbt.BigEndian)
+
+// For Bedrock Edition files
+encoded, err := nbt.MarshalEncoding(data, nbt.LittleEndian)
+
+// For network packets (default)
+encoded, err := nbt.Marshal(data)
+```

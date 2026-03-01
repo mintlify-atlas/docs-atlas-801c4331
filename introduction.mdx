@@ -1,0 +1,97 @@
+---
+title: Introduction
+description: Swiss army knife for Minecraft Bedrock Edition software written in Go
+---
+
+# Welcome to Gophertunnel
+
+Gophertunnel is a powerful Go library for building Minecraft Bedrock Edition network tools, servers, and clients. Whether you're creating proxies, custom servers, or network analysis tools, Gophertunnel provides the building blocks you need.
+
+## What is Gophertunnel?
+
+Gophertunnel is composed of several packages that handle the complexities of Minecraft Bedrock Edition networking:
+
+- **Protocol handling**: Full implementation of the Bedrock Edition protocol
+- **Authentication**: Built-in Xbox Live and Microsoft authentication
+- **Server creation**: Listen for and accept player connections
+- **Client connections**: Connect to remote servers as a client
+- **Packet manipulation**: Read, write, and modify network packets
+
+<Note>
+As of version v1.47.5, Gophertunnel requires at least **Go 1.24**.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Client Connections" icon="plug" href="/quickstart#connecting-as-a-client">
+    Connect to Minecraft servers, read packets, and send commands programmatically
+  </Card>
+  
+  <Card title="Server Creation" icon="server" href="/quickstart#creating-a-server">
+    Create custom Minecraft servers with full control over game logic and packet handling
+  </Card>
+  
+  <Card title="Xbox Live Auth" icon="shield-check">
+    Built-in authentication with Xbox Live and Microsoft accounts
+  </Card>
+  
+  <Card title="Full Protocol Support" icon="code">
+    Complete implementation of Minecraft Bedrock Edition protocol with packet-level access
+  </Card>
+</CardGroup>
+
+## Use Cases
+
+Gophertunnel is perfect for:
+
+- **MITM Proxies**: Forward and analyze traffic between clients and servers
+- **Custom Servers**: Build servers with custom game modes and mechanics
+- **Network Analysis**: Monitor and log Minecraft network traffic
+- **Automation Tools**: Create bots that interact with Minecraft servers
+- **Server Testing**: Automated testing of server implementations
+
+## Quick Example
+
+Here's a glimpse of how simple it is to connect to a Minecraft server:
+
+```go
+package main
+
+import (
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/auth"
+)
+
+func main() {
+    dialer := minecraft.Dialer{
+        TokenSource: auth.TokenSource,
+    }
+    conn, err := dialer.Dial("raknet", "mco.mineplex.com:19132")
+    if err != nil {
+        panic(err)
+    }
+    defer conn.Close()
+    
+    // You're connected!
+    if err := conn.DoSpawn(); err != nil {
+        panic(err)
+    }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Set up Gophertunnel in your Go project
+  </Card>
+  
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Build your first Minecraft client or server
+  </Card>
+</CardGroup>
+
+<Warning>
+We do not under any circumstance support or endorse the usage of Gophertunnel with malicious intent.
+</Warning>

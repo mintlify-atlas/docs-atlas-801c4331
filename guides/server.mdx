@@ -1,0 +1,323 @@
+---
+title: Creating a Minecraft Server
+description: Learn how to create a Minecraft Bedrock Edition server using Gophertunnel
+---
+
+This guide shows you how to create a Minecraft server that accepts client connections using `minecraft.Listen()`.
+
+## Overview
+
+A Minecraft server listens for incoming connections, accepts clients, spawns them in a world, and handles packet communication. Servers can be customized with status providers, resource packs, and custom game data.
+
+## Basic Server Example
+
+<Steps>
+  <Step title="Import Required Packages">
+    ```go
+    import (
+        "fmt"
+        "github.com/sandertv/gophertunnel/minecraft"
+        "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+    )
+    ```
+  </Step>
+
+  <Step title="Configure the Listener">
+    Create a `minecraft.ListenConfig` with a status provider:
+
+    ```go
+    name := "MOTD of this server"
+    cfg := minecraft.ListenConfig{
+        StatusProvider: minecraft.NewStatusProvider(name, "Gophertunnel"),
+    }
+    ```
+
+    The status provider defines what players see in the server list.
+  </Step>
+
+  <Step title="Start Listening">
+    Listen on a specific address and port:
+
+    ```go
+    address := ":19132"
+    listener, err := cfg.Listen("raknet", address)
+    if err != nil {
+        panic(err)
+    }
+    defer listener.Close()
+    ```
+  </Step>
+
+  <Step title="Accept Connections">
+    Accept incoming connections in a loop:
+
+    ```go
+    for {
+        c, err := listener.Accept()
+        if err != nil {
+            return
+        }
+        conn := c.(*minecraft.Conn)
+        
+        // Handle each connection in a goroutine
+        go handleConnection(conn)
+    }
+    ```
+  </Step>
+
+  <Step title="Handle Client Connection">
+    For each client, start the game and process packets:
+
+    ```go
+    func handleConnection(conn *minecraft.Conn) {
+        defer conn.Close()
+
+        // Make the client spawn in the world
+        worldData := minecraft.GameData{}
+        if err := conn.StartGame(worldData); err != nil {
+            return
+        }
+
+        // Read and handle packets
+        for {
+            pk, err := conn.ReadPacket()
+            if err != nil {
+                break
+            }
+
+            // Process packets...
+            switch p := pk.(type) {
+            case *packet.Emote:
+                fmt.Printf("Emote packet: %v\n", p.EmoteID)
+            }
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Complete Example
+
+Here's a complete working server:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+)
+
+func main() {
+    // Create a minecraft.Listener with a specific name to be displayed as MOTD in the server list.
+    name := "MOTD of this server"
+    cfg := minecraft.ListenConfig{
+        StatusProvider: minecraft.NewStatusProvider(name, "Gophertunnel"),
+    }
+
+    // Listen on the address with port 19132.
+    address := ":19132"
+    listener, err := cfg.Listen("raknet", address)
+    if err != nil {
+        panic(err)
+    }
+
+    for {
+        // Accept connections in a for loop. Accept will only return an error if the minecraft.Listener is
+        // closed. (So never unexpectedly.)
+        c, err := listener.Accept()
+        if err != nil {
+            return
+        }
+        conn := c.(*minecraft.Conn)
+
+        go func() {
+            // Process the connection on another goroutine as you would with TCP connections.
+            defer conn.Close()
+
+            // Make the client spawn in the world using conn.StartGame. An error is returned if the client
+            // times out during the connection.
+            worldData := minecraft.GameData{}
+            if err := conn.StartGame(worldData); err != nil {
+                return
+            }
+
+            for {
+                // Read a packet from the connection: ReadPacket returns an error if the connection is closed or if
+                // a read timeout is set. You will generally want to return or break if this happens.
+                pk, err := conn.ReadPacket()
+                if err != nil {
+                    break
+                }
+
+                // The pk variable is of type packet.Packet, which may be type asserted to gain access to the data
+                // they hold:
+                switch p := pk.(type) {
+                case *packet.Emote:
+                    fmt.Printf("Emote packet received: %v\n", p.EmoteID)
+                case *packet.MovePlayer:
+                    fmt.Printf("Player %v moved to %v\n", p.EntityRuntimeID, p.Position)
+                }
+
+                // Write a packet to the connection: Similarly to ReadPacket, WritePacket will (only) return an error
+                // if the connection is closed.
+                p := &packet.ChunkRadiusUpdated{ChunkRadius: 32}
+                if err := conn.WritePacket(p); err != nil {
+                    break
+                }
+            }
+        }()
+    }
+}
+```
+
+## Configuration Options
+
+### Status Provider
+
+The status provider controls what appears in the server list:
+
+```go
+cfg := minecraft.ListenConfig{
+    StatusProvider: minecraft.NewStatusProvider("My Server", "Gophertunnel"),
+}
+```
+
+### Foreign Status Provider
+
+Proxy the status from another server:
+
+```go
+p, err := minecraft.NewForeignStatusProvider("another-server.com:19132")
+if err != nil {
+    panic(err)
+}
+
+cfg := minecraft.ListenConfig{
+    StatusProvider: p,
+}
+```
+
+### Authentication
+
+Enable Xbox Live authentication:
+
+```go
+cfg := minecraft.ListenConfig{
+    StatusProvider: minecraft.NewStatusProvider("My Server", "Gophertunnel"),
+    AuthenticationDisabled: false, // Require authentication (default)
+}
+```
+
+### Resource Packs
+
+Add resource packs to your server:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/resource"
+
+pack, err := resource.ReadPath("path/to/pack.mcpack")
+if err != nil {
+    panic(err)
+}
+
+cfg := minecraft.ListenConfig{
+    StatusProvider: minecraft.NewStatusProvider("My Server", "Gophertunnel"),
+    ResourcePacks:  []*resource.Pack{pack},
+}
+```
+
+See the [resource packs guide](/guides/resource-packs) for more details.
+
+## Game Data
+
+The `minecraft.GameData` struct defines the world the player spawns into:
+
+```go
+worldData := minecraft.GameData{
+    WorldName:              "My World",
+    WorldSpawn:             protocol.BlockPos{X: 0, Y: 64, Z: 0},
+    PlayerPosition:         mgl32.Vec3{0, 65, 0},
+    Difficulty:             1,
+    GameMode:               1, // Creative
+    Time:                   6000,
+    PlayerGameMode:         1,
+}
+
+if err := conn.StartGame(worldData); err != nil {
+    return
+}
+```
+
+## Managing Connections
+
+### Disconnecting Players
+
+```go
+err := listener.Disconnect(conn, "You have been kicked")
+if err != nil {
+    fmt.Printf("Failed to disconnect: %v\n", err)
+}
+```
+
+### Graceful Shutdown
+
+```go
+import "context"
+
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+
+// In another goroutine, close the listener on signal
+go func() {
+    <-ctx.Done()
+    listener.Close()
+}()
+
+for {
+    c, err := listener.Accept()
+    if err != nil {
+        // Listener was closed
+        return
+    }
+    // Handle connection...
+}
+```
+
+## Error Handling
+
+### Accept Errors
+
+```go
+c, err := listener.Accept()
+if err != nil {
+    // Listener was closed
+    fmt.Printf("Accept error: %v\n", err)
+    return
+}
+```
+
+### StartGame Errors
+
+```go
+if err := conn.StartGame(worldData); err != nil {
+    // Client timed out or rejected
+    fmt.Printf("StartGame error: %v\n", err)
+    return
+}
+```
+
+## Best Practices
+
+1. **Use Goroutines**: Handle each connection in a separate goroutine to support multiple clients
+2. **Close Connections**: Always defer `conn.Close()` to clean up resources
+3. **Handle Errors**: Check errors from `ReadPacket()` and `WritePacket()` to detect disconnections
+4. **Validate Packets**: Validate packet data before processing to prevent crashes
+
+## Next Steps
+
+- Learn about [creating a proxy](/guides/proxy)
+- Add [resource packs](/guides/resource-packs) to your server
+- Explore [NBT encoding](/guides/nbt) for world data
+- Use [server querying](/guides/query) to query server status

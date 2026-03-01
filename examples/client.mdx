@@ -1,0 +1,164 @@
+---
+title: Client Example
+description: Connect to a Minecraft Bedrock server and handle packets
+---
+
+This example demonstrates how to create a Minecraft client that connects to a server, spawns in the world, and handles incoming and outgoing packets.
+
+## Complete Example
+
+The following code shows a complete client implementation:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/sandertv/gophertunnel/minecraft"
+	"github.com/sandertv/gophertunnel/minecraft/auth"
+	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+)
+
+func main() {
+	// Create a minecraft.Dialer with an auth.TokenSource to authenticate to the server.
+	dialer := minecraft.Dialer{
+		TokenSource: auth.TokenSource,
+	}
+	// Dial a new connection to the target server.
+	address := "mco.mineplex.com:19132"
+	conn, err := dialer.Dial("raknet", address)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+
+	// Make the client spawn in the world: This is a blocking operation that will return an error if the
+	// client times out while spawning.
+	if err := conn.DoSpawn(); err != nil {
+		panic(err)
+	}
+
+	// You will then want to start a for loop that reads packets from the connection until it is closed.
+	for {
+		// Read a packet from the connection: ReadPacket returns an error if the connection is closed or if
+		// a read timeout is set. You will generally want to return or break if this happens.
+		pk, err := conn.ReadPacket()
+		if err != nil {
+			break
+		}
+
+		// The pk variable is of type packet.Packet, which may be type asserted to gain access to the data
+		// they hold:
+		switch p := pk.(type) {
+		case *packet.Emote:
+			fmt.Printf("Emote packet received: %v\n", p.EmoteID)
+		case *packet.MovePlayer:
+			fmt.Printf("Player %v moved to %v\n", p.EntityRuntimeID, p.Position)
+		}
+
+		// Write a packet to the connection: Similarly to ReadPacket, WritePacket will (only) return an error
+		// if the connection is closed.
+		p := &packet.RequestChunkRadius{ChunkRadius: 32, MaxChunkRadius: 32}
+		if err := conn.WritePacket(p); err != nil {
+			break
+		}
+	}
+}
+```
+
+## Key Components
+
+### 1. Creating a Dialer
+
+The `minecraft.Dialer` is used to establish connections to servers:
+
+```go
+dialer := minecraft.Dialer{
+    TokenSource: auth.TokenSource,
+}
+```
+
+<Note>
+The `auth.TokenSource` handles Microsoft authentication automatically. It will prompt for login credentials when needed.
+</Note>
+
+### 2. Connecting to a Server
+
+Use the `Dial` method to connect to a server address:
+
+```go
+conn, err := dialer.Dial("raknet", address)
+if err != nil {
+    panic(err)
+}
+defer conn.Close()
+```
+
+The first parameter `"raknet"` specifies the network protocol (RakNet is the protocol used by Minecraft Bedrock).
+
+### 3. Spawning in the World
+
+Before you can interact with the game world, the client must spawn:
+
+```go
+if err := conn.DoSpawn(); err != nil {
+    panic(err)
+}
+```
+
+<Tip>
+`DoSpawn()` is a blocking operation that handles the entire spawn sequence. It returns an error if the connection times out during spawning.
+</Tip>
+
+### 4. Reading Packets
+
+Packets are read in a continuous loop:
+
+```go
+for {
+    pk, err := conn.ReadPacket()
+    if err != nil {
+        break
+    }
+    // Handle packet...
+}
+```
+
+`ReadPacket()` returns when:
+- A packet is received
+- The connection is closed
+- A read timeout occurs (if configured)
+
+### 5. Handling Packet Types
+
+Use type assertions to access packet-specific data:
+
+```go
+switch p := pk.(type) {
+case *packet.Emote:
+    fmt.Printf("Emote packet received: %v\n", p.EmoteID)
+case *packet.MovePlayer:
+    fmt.Printf("Player %v moved to %v\n", p.EntityRuntimeID, p.Position)
+}
+```
+
+<Note>
+All packet types are defined in the `github.com/sandertv/gophertunnel/minecraft/protocol/packet` package.
+</Note>
+
+### 6. Writing Packets
+
+Send packets to the server using `WritePacket()`:
+
+```go
+p := &packet.RequestChunkRadius{ChunkRadius: 32, MaxChunkRadius: 32}
+if err := conn.WritePacket(p); err != nil {
+    break
+}
+```
+
+## Next Steps
+
+- Explore the [Server Example](/examples/server) to learn how to accept connections
+- Check the [Proxy Example](/examples/proxy) for a more advanced use case
+- Review the [Protocol Documentation](/api/packets) for available packet types

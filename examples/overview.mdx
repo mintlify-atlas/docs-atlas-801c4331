@@ -1,0 +1,45 @@
+---
+title: Examples Overview
+description: Complete examples demonstrating common use cases for Gophertunnel
+---
+
+Gophertunnel provides several complete examples to help you get started with building Minecraft Bedrock Edition network tools. These examples demonstrate the core functionality of the library.
+
+## Available Examples
+
+<CardGroup cols={2}>
+  <Card title="Client Example" icon="desktop" href="/examples/client">
+    Connect to a Minecraft server and interact with packets
+  </Card>
+  <Card title="Server Example" icon="server" href="/examples/server">
+    Create a custom Minecraft server that accepts connections
+  </Card>
+  <Card title="Proxy Example" icon="shuffle" href="/examples/proxy">
+    Build a proxy that forwards players between servers
+  </Card>
+</CardGroup>
+
+## Getting Started
+
+All examples use the main `github.com/sandertv/gophertunnel/minecraft` package. Make sure you have it installed:
+
+```bash
+go get github.com/sandertv/gophertunnel/minecraft
+```
+
+<Note>
+These examples are extracted from the actual Gophertunnel source code and represent real, working implementations.
+</Note>
+
+## Common Patterns
+
+Across all examples, you'll notice some common patterns:
+
+- **Packet Handling**: All connections use `ReadPacket()` and `WritePacket()` for communication
+- **Error Handling**: Network operations return errors that should be handled appropriately
+- **Authentication**: Clients use `auth.TokenSource` for Microsoft authentication
+- **Concurrency**: Servers and proxies use goroutines to handle multiple connections
+
+<Tip>
+Start with the client example to understand basic packet handling, then move on to the server and proxy examples for more advanced use cases.
+</Tip>

@@ -1,0 +1,258 @@
+---
+title: packets
+description: Minecraft Bedrock Edition packet types
+---
+
+The `minecraft/protocol/packet` package contains all packet types used in Minecraft Bedrock Edition network communication. Each packet implements the `Packet` interface.
+
+## Packet Interface
+
+```go
+type Packet interface {
+    ID() uint32
+    Marshal(io protocol.IO)
+}
+```
+
+All packets implement this interface with:
+- `ID()` - Returns the unique packet identifier
+- `Marshal(io)` - Serializes/deserializes the packet data
+
+## Packet Categories
+
+The protocol includes 200+ packet types organized by functionality:
+
+### Login & Handshake
+
+- **Login** - Initial login request with JWT chain
+- **ServerToClientHandshake** - Server encryption handshake
+- **ClientToServerHandshake** - Client handshake response
+- **PlayStatus** - Login status updates
+- **NetworkSettings** - Compression and network configuration
+- **RequestNetworkSettings** - Client requests network settings
+
+### World & Gameplay
+
+- **StartGame** - Initializes the player in the world
+- **SetLocalPlayerAsInitialised** - Signals spawn completion
+- **UpdateBlock** - Single block update
+- **UpdateSubChunkBlocks** - Multiple block updates
+- **LevelChunk** - Full chunk data
+- **SubChunk** - Sub-chunk data
+- **SetTime** - World time update
+- **SetDifficulty** - Difficulty setting
+
+### Entity Management
+
+- **AddActor** - Spawns an entity
+- **AddPlayer** - Adds a player entity
+- **RemoveActor** - Removes an entity
+- **MoveActorAbsolute** - Absolute entity movement
+- **MoveActorDelta** - Delta-based movement
+- **SetActorMotion** - Sets entity velocity
+- **SetActorData** - Updates entity metadata
+- **UpdateAttributes** - Updates entity attributes (health, hunger, etc.)
+
+### Player Actions
+
+- **PlayerAction** - Mining, jumping, etc.
+- **PlayerAuthInput** - Client input (position, rotation, actions)
+- **Interact** - Entity interaction
+- **Respawn** - Player respawn
+- **ChangeDimension** - Dimension change
+- **RequestChunkRadius** - Chunk view distance
+
+### Inventory & Items
+
+- **InventoryTransaction** - Item transactions
+- **InventorySlot** - Single slot update
+- **InventoryContent** - Full inventory content
+- **MobEquipment** - Equipment changes
+- **ContainerOpen** - Opens a container
+- **ContainerClose** - Closes a container
+- **ItemStackRequest** - Item stack operations
+- **ItemStackResponse** - Server response to stack request
+- **CraftingData** - Available recipes
+
+### Commands & Chat
+
+- **Text** - Chat messages
+- **CommandRequest** - Command execution
+- **AvailableCommands** - Available command list
+- **CommandOutput** - Command execution result
+
+### Resource Packs
+
+- **ResourcePacksInfo** - Available resource packs
+- **ResourcePackStack** - Pack load order
+- **ResourcePackClientResponse** - Client response
+- **ResourcePackDataInfo** - Pack download info
+- **ResourcePackChunkData** - Pack chunk data
+- **ResourcePackChunkRequest** - Request pack chunk
+
+### Effects & Particles
+
+- **LevelEvent** - Level events (sounds, particles)
+- **LevelSoundEvent** - Sound effects
+- **SpawnParticleEffect** - Particle spawn
+- **PlaySound** - Play a sound
+- **StopSound** - Stop a sound
+
+### UI & HUD
+
+- **SetTitle** - Title/subtitle display
+- **SetHUD** - HUD element visibility
+- **BossEvent** - Boss bar updates
+- **ShowProfile** - Show player profile
+- **ModalFormRequest** - Display a form
+- **ModalFormResponse** - Form response
+
+### Scoreboard
+
+- **SetDisplayObjective** - Set scoreboard display
+- **SetScore** - Update score entries
+- **RemoveObjective** - Remove objective
+- **SetScoreboardIdentity** - Set player identity
+
+### Abilities & Permissions
+
+- **UpdateAbilities** - Player ability updates
+- **UpdateAdventureSettings** - Adventure mode settings
+- **RequestAbility** - Request ability change
+
+### Camera
+
+- **CameraShake** - Shake effect
+- **CameraPresets** - Camera preset definitions
+- **CameraInstruction** - Camera control instruction
+
+### Other Common Packets
+
+- **Transfer** - Transfer to another server
+- **Disconnect** - Disconnect with message
+- **Animate** - Animation trigger
+- **EmoteList** - Available emotes
+- **Emote** - Play emote
+- **TickSync** - Client/server tick synchronization
+- **NetworkChunkPublisherUpdate** - Chunk loading center
+
+## Packet Pool
+
+```go
+type Pool map[uint32]Packet
+```
+
+A Pool maps packet IDs to packet instances for decoding.
+
+### NewServerPool
+
+```go
+func NewServerPool() Pool
+```
+
+Creates a packet pool for server-side connections (client → server packets).
+
+### NewClientPool
+
+```go
+func NewClientPool() Pool
+```
+
+Creates a packet pool for client-side connections (server → client packets).
+
+## Header
+
+```go
+type Header struct {
+    PacketID       uint32
+    SenderSubClientID, TargetSubClientID byte
+}
+```
+
+Every packet is prefixed with a header containing the packet ID and sub-client IDs.
+
+## Example Usage
+
+### Reading Packets
+
+```go
+for {
+    pk, err := conn.ReadPacket()
+    if err != nil {
+        break
+    }
+    
+    switch pk := pk.(type) {
+    case *packet.Text:
+        fmt.Println("Chat:", pk.Message)
+    case *packet.MoveActorAbsolute:
+        fmt.Printf("Entity %d moved to %v\n", pk.EntityRuntimeID, pk.Position)
+    }
+}
+```
+
+### Writing Packets
+
+```go
+// Send a chat message
+err := conn.WritePacket(&packet.Text{
+    TextType: packet.TextTypeChat,
+    Message:  "Hello, world!",
+})
+
+// Teleport a player
+err = conn.WritePacket(&packet.MoveActorAbsolute{
+    EntityRuntimeID: playerID,
+    Position:        mgl32.Vec3{0, 100, 0},
+    Rotation:        mgl32.Vec3{0, 0, 0},
+})
+
+// Don't forget to flush!
+conn.Flush()
+```
+
+### Custom Packet Handling
+
+```go
+type StartGame struct {
+    EntityUniqueID  int64
+    EntityRuntimeID uint64
+    PlayerGameMode  int32
+    PlayerPosition  mgl32.Vec3
+    Pitch, Yaw      float32
+    WorldName       string
+    // ... many more fields
+}
+
+func (*StartGame) ID() uint32 {
+    return IDStartGame
+}
+
+func (pk *StartGame) Marshal(io protocol.IO) {
+    io.Varint64(&pk.EntityUniqueID)
+    io.Varuint64(&pk.EntityRuntimeID)
+    io.Varint32(&pk.PlayerGameMode)
+    io.Vec3(&pk.PlayerPosition)
+    io.Float32(&pk.Pitch)
+    io.Float32(&pk.Yaw)
+    io.String(&pk.WorldName)
+    // ... marshal remaining fields
+}
+```
+
+## Packet IDs
+
+Packet IDs are defined as constants:
+
+```go
+const (
+    IDLogin                  = 1
+    IDPlayStatus            = 2
+    IDServerToClientHandshake = 3
+    IDClientToServerHandshake = 4
+    IDDisconnect            = 5
+    IDResourcePacksInfo     = 6
+    IDResourcePackStack     = 7
+    // ... 200+ more packet IDs
+)
+```

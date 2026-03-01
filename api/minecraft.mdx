@@ -1,0 +1,389 @@
+---
+title: minecraft
+description: Core package for dialing and listening to Minecraft Bedrock Edition connections
+---
+
+The `minecraft` package provides high-level abstractions for connecting to and hosting Minecraft Bedrock Edition servers. It handles authentication, encryption, and the login sequence automatically.
+
+## Core Functions
+
+### Dial
+
+```go
+func Dial(network, address string) (*Conn, error)
+```
+
+Dials a Minecraft connection to the specified address. The network is typically "raknet".
+
+<ParamField path="network" type="string">
+  The network protocol to use (typically "raknet")
+</ParamField>
+
+<ParamField path="address" type="string">
+  The server address to connect to (e.g., "localhost:19132")
+</ParamField>
+
+<ResponseField name="*Conn">
+  A connection that can be used to send and receive packets
+</ResponseField>
+
+<ResponseField name="error">
+  Error if the connection fails
+</ResponseField>
+
+### DialTimeout
+
+```go
+func DialTimeout(network, address string, timeout time.Duration) (*Conn, error)
+```
+
+Dials a connection with a specified timeout period.
+
+### DialContext
+
+```go
+func DialContext(ctx context.Context, network, address string) (*Conn, error)
+```
+
+Dials a connection with context support for cancellation.
+
+### Listen
+
+```go
+func Listen(network, address string) (*Listener, error)
+```
+
+Creates a listener for incoming Minecraft connections.
+
+<ParamField path="network" type="string">
+  The network protocol to use (typically "raknet")
+</ParamField>
+
+<ParamField path="address" type="string">
+  The address to listen on (e.g., ":19132")
+</ParamField>
+
+<ResponseField name="*Listener">
+  A listener that accepts incoming connections
+</ResponseField>
+
+## Dialer
+
+The `Dialer` type allows customizing connection behavior.
+
+```go
+type Dialer struct {
+    ErrorLog               *slog.Logger
+    HTTPClient             *http.Client
+    ClientData             login.ClientData
+    IdentityData           login.IdentityData
+    TokenSource            oauth2.TokenSource
+    XBLToken               *auth.XBLToken
+    PacketFunc             func(header packet.Header, payload []byte, src, dst net.Addr)
+    DownloadResourcePack   func(id uuid.UUID, version string, current, total int) bool
+    DisconnectOnUnknownPackets bool
+    DisconnectOnInvalidPackets bool
+    Protocol               Protocol
+    FlushRate              time.Duration
+    EnableClientCache      bool
+    KeepXBLIdentityData    bool
+    EnableLegacyAuth       bool
+}
+```
+
+### Methods
+
+#### Dial
+
+```go
+func (d Dialer) Dial(network, address string) (*Conn, error)
+```
+
+Dials using the custom dialer configuration.
+
+#### DialTimeout
+
+```go
+func (d Dialer) DialTimeout(network, address string, timeout time.Duration) (*Conn, error)
+```
+
+#### DialContext
+
+```go
+func (d Dialer) DialContext(ctx context.Context, network, address string) (*Conn, error)
+```
+
+## ListenConfig
+
+The `ListenConfig` type allows customizing listener behavior.
+
+```go
+type ListenConfig struct {
+    ErrorLog                   *slog.Logger
+    HTTPClient                 *http.Client
+    AuthenticationDisabled     bool
+    MaximumPlayers             int
+    AllowUnknownPackets        bool
+    AllowInvalidPackets        bool
+    StatusProvider             ServerStatusProvider
+    AcceptedProtocols          []Protocol
+    Compression                packet.Compression
+    CompressionSelector        func(proto Protocol) packet.Compression
+    CompressionThreshold       int
+    FlushRate                  time.Duration
+    ResourcePacks              []*resource.Pack
+    TexturePacksRequired       bool
+    FetchResourcePacks         func(identityData login.IdentityData, clientData login.ClientData, current []*resource.Pack) []*resource.Pack
+    PacketFunc                 func(header packet.Header, payload []byte, src, dst net.Addr)
+    MaxDecompressedLen         int
+}
+```
+
+### Methods
+
+#### Listen
+
+```go
+func (cfg ListenConfig) Listen(network string, address string) (*Listener, error)
+```
+
+Creates a listener with the custom configuration.
+
+## Listener
+
+Represents a server that accepts incoming Minecraft connections.
+
+### Methods
+
+#### Accept
+
+```go
+func (listener *Listener) Accept() (net.Conn, error)
+```
+
+Accepts a fully connected client. Cast the returned `net.Conn` to `*minecraft.Conn` to use packet methods.
+
+#### Disconnect
+
+```go
+func (listener *Listener) Disconnect(conn *Conn, message string) error
+```
+
+Disconnects a client with an optional message.
+
+#### AddResourcePack
+
+```go
+func (listener *Listener) AddResourcePack(pack *resource.Pack)
+```
+
+Adds a resource pack to the listener.
+
+#### RemoveResourcePack
+
+```go
+func (listener *Listener) RemoveResourcePack(uuid string)
+```
+
+Removes a resource pack by UUID.
+
+#### Addr
+
+```go
+func (listener *Listener) Addr() net.Addr
+```
+
+Returns the listener's address.
+
+#### Close
+
+```go
+func (listener *Listener) Close() error
+```
+
+Closes the listener.
+
+#### PlayerCount
+
+```go
+func (listener *Listener) PlayerCount() int
+```
+
+Returns the number of active connections.
+
+## Conn
+
+Represents a Minecraft connection (client or server side).
+
+### Methods
+
+#### ReadPacket
+
+```go
+func (conn *Conn) ReadPacket() (pk packet.Packet, err error)
+```
+
+Reads the next packet from the connection.
+
+#### WritePacket
+
+```go
+func (conn *Conn) WritePacket(pk packet.Packet) error
+```
+
+Writes a packet to the connection (buffered until flush).
+
+#### Flush
+
+```go
+func (conn *Conn) Flush() error
+```
+
+Flushes buffered packets to the network.
+
+#### StartGame
+
+```go
+func (conn *Conn) StartGame(data GameData) error
+```
+
+Starts the game for a client (server-side only).
+
+#### DoSpawn
+
+```go
+func (conn *Conn) DoSpawn() error
+```
+
+Completes the spawn sequence (client-side only).
+
+#### IdentityData
+
+```go
+func (conn *Conn) IdentityData() login.IdentityData
+```
+
+Returns the client's identity data (UUID, XUID, username).
+
+#### ClientData
+
+```go
+func (conn *Conn) ClientData() login.ClientData
+```
+
+Returns the client data (skin, locale, device info).
+
+#### Authenticated
+
+```go
+func (conn *Conn) Authenticated() bool
+```
+
+Returns true if the connection was authenticated via XBOX Live.
+
+#### GameData
+
+```go
+func (conn *Conn) GameData() GameData
+```
+
+Returns game-specific initialization data.
+
+#### Proto
+
+```go
+func (conn *Conn) Proto() Protocol
+```
+
+Returns the protocol version being used.
+
+#### ResourcePacks
+
+```go
+func (conn *Conn) ResourcePacks() []*resource.Pack
+```
+
+Returns all resource packs associated with the connection.
+
+#### ClientCacheEnabled
+
+```go
+func (conn *Conn) ClientCacheEnabled() bool
+```
+
+Returns whether client blob cache is enabled.
+
+#### ChunkRadius
+
+```go
+func (conn *Conn) ChunkRadius() int
+```
+
+Returns the negotiated chunk radius.
+
+#### Latency
+
+```go
+func (conn *Conn) Latency() time.Duration
+```
+
+Returns the rolling average latency (half RTT).
+
+#### Context
+
+```go
+func (conn *Conn) Context() context.Context
+```
+
+Returns the connection's context (canceled when closed).
+
+#### Close
+
+```go
+func (conn *Conn) Close() error
+```
+
+Closes the connection after flushing pending packets.
+
+## Example Usage
+
+### Client Example
+
+```go
+conn, err := minecraft.Dial("raknet", "localhost:19132")
+if err != nil {
+    panic(err)
+}
+defer conn.Close()
+
+if err := conn.DoSpawn(); err != nil {
+    panic(err)
+}
+
+for {
+    pk, err := conn.ReadPacket()
+    if err != nil {
+        break
+    }
+    // Handle packet
+}
+```
+
+### Server Example
+
+```go
+listener, err := minecraft.Listen("raknet", ":19132")
+if err != nil {
+    panic(err)
+}
+defer listener.Close()
+
+for {
+    c, err := listener.Accept()
+    if err != nil {
+        break
+    }
+    conn := c.(*minecraft.Conn)
+    go handleConn(conn)
+}
+```

@@ -1,0 +1,395 @@
+---
+title: 'Connections'
+description: 'Learn how to establish client and server connections in Gophertunnel'
+---
+
+## Overview
+
+Gophertunnel provides a high-level API for establishing Minecraft Bedrock Edition connections. The library handles the complete connection lifecycle including protocol negotiation, encryption, compression, and packet management.
+
+## Client Connections
+
+### Dialer
+
+The `Dialer` type allows you to configure and establish client connections to Minecraft servers. It's located in `minecraft/dial.go`.
+
+```go
+type Dialer struct {
+    ErrorLog                   *slog.Logger
+    HTTPClient                 *http.Client
+    ClientData                 login.ClientData
+    IdentityData               login.IdentityData
+    TokenSource                oauth2.TokenSource
+    XBLToken                   *auth.XBLToken
+    PacketFunc                 func(header packet.Header, payload []byte, src, dst net.Addr)
+    DownloadResourcePack       func(id uuid.UUID, version string, current, total int) bool
+    DisconnectOnUnknownPackets bool
+    DisconnectOnInvalidPackets bool
+    Protocol                   Protocol
+    FlushRate                  time.Duration
+    EnableClientCache          bool
+    KeepXBLIdentityData        bool
+    EnableLegacyAuth           bool
+}
+```
+
+<ParamField path="ErrorLog" type="*slog.Logger">
+  Logger for packet handling errors. By default, errors are not logged.
+</ParamField>
+
+<ParamField path="HTTPClient" type="*http.Client">
+  HTTP client for outbound requests (OpenID config, JWKs). Defaults to `http.DefaultClient`.
+</ParamField>
+
+<ParamField path="ClientData" type="login.ClientData">
+  Client data including skin, locale, and UUIDs. A default is used if empty.
+</ParamField>
+
+<ParamField path="IdentityData" type="login.IdentityData">
+  Identity data with username, UUID, and XUID. Obtained via auth if TokenSource is set.
+</ParamField>
+
+<ParamField path="TokenSource" type="oauth2.TokenSource">
+  Source for Microsoft Live Connect tokens used to authenticate to XBOX Live. If nil, no authentication is used.
+</ParamField>
+
+<ParamField path="XBLToken" type="*auth.XBLToken">
+  Pre-obtained XBL token for the `https://multiplayer.minecraft.net` relying party.
+</ParamField>
+
+<ParamField path="PacketFunc" type="func(...)">
+  Callback invoked for every packet read/written, including login packets.
+</ParamField>
+
+<ParamField path="DownloadResourcePack" type="func(...) bool">
+  Callback to determine whether to download each resource pack. Return true to download.
+</ParamField>
+
+<ParamField path="DisconnectOnUnknownPackets" type="bool">
+  If true, close connection on unknown packets. If false, return as `packet.Unknown`.
+</ParamField>
+
+<ParamField path="DisconnectOnInvalidPackets" type="bool">
+  If true, close connection on invalid packets. If false, skip or return partial data.
+</ParamField>
+
+<ParamField path="Protocol" type="Protocol">
+  Protocol version for communication. Defaults to current protocol from `minecraft/protocol`.
+</ParamField>
+
+<ParamField path="FlushRate" type="time.Duration">
+  Rate at which buffered packets are flushed. Default is `time.Second/20`. Set negative to disable auto-flush.
+</ParamField>
+
+<ParamField path="EnableClientCache" type="bool">
+  Enable client blob cache to reduce chunk transmission.
+</ParamField>
+
+<ParamField path="KeepXBLIdentityData" type="bool">
+  Pass XUID and title ID to server without authentication token. May cause kicks on some servers.
+</ParamField>
+
+<ParamField path="EnableLegacyAuth" type="bool">
+  Use pre-1.21.90 authentication behavior. Only for outdated servers.
+</ParamField>
+
+### Establishing a Connection
+
+#### Simple Connection
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft"
+
+// Connect to a server using default settings
+conn, err := minecraft.Dial("raknet", "example.com:19132")
+if err != nil {
+    panic(err)
+}
+defer conn.Close()
+```
+
+#### Connection with Timeout
+
+```go
+// Connect with a 10 second timeout
+conn, err := minecraft.DialTimeout("raknet", "example.com:19132", 10*time.Second)
+if err != nil {
+    panic(err)
+}
+defer conn.Close()
+```
+
+#### Connection with Context
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+
+conn, err := minecraft.DialContext(ctx, "raknet", "example.com:19132")
+if err != nil {
+    panic(err)
+}
+defer conn.Close()
+```
+
+#### Authenticated Connection
+
+```go
+import (
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/auth"
+)
+
+// Use device auth to get a token
+tokenSource := auth.TokenSource
+
+dialer := minecraft.Dialer{
+    TokenSource: tokenSource,
+}
+
+conn, err := dialer.Dial("raknet", "example.com:19132")
+if err != nil {
+    panic(err)
+}
+defer conn.Close()
+```
+
+## Server Connections
+
+### ListenConfig
+
+The `ListenConfig` type configures server listeners to accept incoming Minecraft client connections. It's located in `minecraft/listener.go`.
+
+```go
+type ListenConfig struct {
+    ErrorLog                 *slog.Logger
+    HTTPClient               *http.Client
+    AuthenticationDisabled   bool
+    MaximumPlayers           int
+    AllowUnknownPackets      bool
+    AllowInvalidPackets      bool
+    StatusProvider           ServerStatusProvider
+    AcceptedProtocols        []Protocol
+    Compression              packet.Compression
+    CompressionSelector      func(proto Protocol) packet.Compression
+    CompressionThreshold     int
+    FlushRate                time.Duration
+    ResourcePacks            []*resource.Pack
+    TexturePacksRequired     bool
+    FetchResourcePacks       func(identityData login.IdentityData, clientData login.ClientData, current []*resource.Pack) []*resource.Pack
+    PacketFunc               func(header packet.Header, payload []byte, src, dst net.Addr)
+    MaxDecompressedLen       int
+}
+```
+
+<ParamField path="ErrorLog" type="*slog.Logger">
+  Logger for client packet handling errors. By default, errors are not logged.
+</ParamField>
+
+<ParamField path="HTTPClient" type="*http.Client">
+  HTTP client for OpenID config/JWKs when authentication is enabled.
+</ParamField>
+
+<ParamField path="AuthenticationDisabled" type="bool">
+  If true, skip XBOX Live verification for connecting players.
+</ParamField>
+
+<ParamField path="MaximumPlayers" type="int">
+  Maximum player count. If zero, unlimited players are accepted and count is dynamically updated.
+</ParamField>
+
+<ParamField path="AllowUnknownPackets" type="bool">
+  If false, close connection on unknown packets. If true, return as `packet.Unknown`.
+</ParamField>
+
+<ParamField path="AllowInvalidPackets" type="bool">
+  If false, close connection on invalid packets. If true, handle partial/oversized packets.
+</ParamField>
+
+<ParamField path="StatusProvider" type="ServerStatusProvider">
+  Provides server status info for pings. Defaults to `ListenerStatusProvider`.
+</ParamField>
+
+<ParamField path="AcceptedProtocols" type="[]Protocol">
+  List of accepted protocol versions. Current protocol is always added. Clients with other versions are disconnected.
+</ParamField>
+
+<ParamField path="Compression" type="packet.Compression">
+  Compression algorithm for packets. Defaults to `packet.DefaultCompression`.
+</ParamField>
+
+<ParamField path="CompressionSelector" type="func(proto Protocol) packet.Compression">
+  Selects compression per connection based on protocol. Defaults to returning `Compression`.
+</ParamField>
+
+<ParamField path="CompressionThreshold" type="int">
+  Minimum data size in bytes to trigger compression. Default is 256. Set to -1 to disable compression.
+</ParamField>
+
+<ParamField path="FlushRate" type="time.Duration">
+  Packet flush rate for buffering. Default is `time.Second/20`. Negative value disables auto-flush.
+</ParamField>
+
+<ParamField path="ResourcePacks" type="[]*resource.Pack">
+  Resource packs sent to clients on join. Modify after listen with `AddResourcePack()`/`RemoveResourcePack()`.
+</ParamField>
+
+<ParamField path="TexturePacksRequired" type="bool">
+  If true, clients must accept texture packs to join.
+</ParamField>
+
+<ParamField path="FetchResourcePacks" type="func(...) []*resource.Pack">
+  Called before sending ResourcePacksInfo to customize packs per client.
+</ParamField>
+
+<ParamField path="PacketFunc" type="func(...)">
+  Callback for every packet read/written on accepted connections.
+</ParamField>
+
+<ParamField path="MaxDecompressedLen" type="int">
+  Maximum decompressed packet length. Default is 16MB. Negative disables limit.
+</ParamField>
+
+### Creating a Listener
+
+#### Basic Server
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft"
+
+// Listen on the default Minecraft port
+listener, err := minecraft.Listen("raknet", "0.0.0.0:19132")
+if err != nil {
+    panic(err)
+}
+defer listener.Close()
+
+for {
+    conn, err := listener.Accept()
+    if err != nil {
+        panic(err)
+    }
+    go handleConnection(conn.(*minecraft.Conn))
+}
+```
+
+#### Authenticated Server
+
+```go
+config := minecraft.ListenConfig{
+    AuthenticationDisabled: false, // Require Xbox Live authentication
+    MaximumPlayers:        20,
+}
+
+listener, err := config.Listen("raknet", "0.0.0.0:19132")
+if err != nil {
+    panic(err)
+}
+defer listener.Close()
+```
+
+#### Server with Resource Packs
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/resource"
+
+pack, err := resource.ReadPath("./my_pack")
+if err != nil {
+    panic(err)
+}
+
+config := minecraft.ListenConfig{
+    ResourcePacks:        []*resource.Pack{pack},
+    TexturePacksRequired: true,
+}
+
+listener, err := config.Listen("raknet", "0.0.0.0:19132")
+if err != nil {
+    panic(err)
+}
+```
+
+## The Conn Type
+
+Both `Dialer.Dial()` and `Listener.Accept()` return a `*minecraft.Conn`, which represents an active Minecraft connection. This type is defined in `minecraft/conn.go`.
+
+### Key Methods
+
+```go
+// Read a packet from the connection
+pk, err := conn.ReadPacket()
+
+// Write a packet to the connection
+err = conn.WritePacket(&packet.Text{
+    Message: "Hello, world!",
+})
+
+// Flush buffered packets immediately
+err = conn.Flush()
+
+// Get connection metadata
+identity := conn.IdentityData()  // Username, UUID, XUID
+clientData := conn.ClientData()  // Skin, locale, device info
+gameData := conn.GameData()      // World/spawn info (client-side)
+
+// Check authentication status
+if conn.Authenticated() {
+    fmt.Println("Player is logged into Xbox Live")
+}
+
+// Get network info
+latency := conn.Latency()
+chunkRadius := conn.ChunkRadius()
+
+// Close the connection
+conn.Close()
+```
+
+<Note>
+  `ReadPacket()` must not be called on multiple goroutines simultaneously, but `WritePacket()` is safe for concurrent use.
+</Note>
+
+### Connection Context
+
+Each connection has an associated context that is cancelled when the connection closes:
+
+```go
+ctx := conn.Context()
+
+select {
+case <-ctx.Done():
+    fmt.Println("Connection closed")
+}
+```
+
+## Network Protocol
+
+Gophertunnel supports the "raknet" network, which is the standard RakNet-based protocol used by Minecraft Bedrock Edition.
+
+<Info>
+  The network string "raknet" is typically used for both Dial and Listen operations. This represents the RakNet protocol over UDP.
+</Info>
+
+## Protocol Versions
+
+You can specify which protocol version to use:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+// Use a specific protocol version
+dialer := minecraft.Dialer{
+    Protocol: minecraft.DefaultProtocol, // Current version
+}
+
+// Accept multiple protocol versions (server)
+config := minecraft.ListenConfig{
+    AcceptedProtocols: []minecraft.Protocol{
+        // Add legacy protocol versions here
+    },
+}
+```
+
+<Warning>
+  Protocol version mismatches will result in the connection being rejected during the handshake phase.
+</Warning>

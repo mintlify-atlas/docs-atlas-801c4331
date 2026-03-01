@@ -1,0 +1,508 @@
+---
+title: 'Packets'
+description: 'Read and write Minecraft protocol packets'
+---
+
+## Overview
+
+Packets are the fundamental unit of communication in Minecraft Bedrock Edition. Gophertunnel provides a complete packet system for reading, writing, encoding, and decoding all Minecraft protocol packets.
+
+The packet system is implemented across several files:
+- `minecraft/conn.go` - High-level packet reading/writing
+- `minecraft/protocol/packet/` - Individual packet definitions
+- `minecraft/protocol/reader.go` - Low-level data reading
+- `minecraft/protocol/writer.go` - Low-level data writing
+
+## Reading Packets
+
+### Basic Packet Reading
+
+Use `ReadPacket()` to receive packets from a connection:
+
+```go
+import (
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+)
+
+func handleConnection(conn *minecraft.Conn) {
+    defer conn.Close()
+    
+    for {
+        // Read the next packet
+        pk, err := conn.ReadPacket()
+        if err != nil {
+            return
+        }
+        
+        // Handle specific packet types
+        switch pk := pk.(type) {
+        case *packet.Text:
+            fmt.Printf("Chat: %s\n", pk.Message)
+        case *packet.MovePlayer:
+            fmt.Printf("Player moved to %v\n", pk.Position)
+        case *packet.RequestChunkRadius:
+            fmt.Printf("Client requested chunk radius: %d\n", pk.ChunkRadius)
+        }
+    }
+}
+```
+
+<Note>
+  `ReadPacket()` must not be called from multiple goroutines simultaneously. Only one goroutine should read packets from a connection.
+</Note>
+
+### Unknown Packets
+
+If a packet ID is not recognized, `ReadPacket()` returns a `*packet.Unknown`:
+
+```go
+pk, err := conn.ReadPacket()
+if err != nil {
+    return
+}
+
+if unknown, ok := pk.(*packet.Unknown); ok {
+    fmt.Printf("Unknown packet ID: 0x%X\n", unknown.PacketID)
+    // Access raw payload
+    payload := unknown.Payload
+}
+```
+
+Control this behavior with `Dialer.DisconnectOnUnknownPackets`:
+
+```go
+dialer := minecraft.Dialer{
+    DisconnectOnUnknownPackets: false, // Return as packet.Unknown
+    // DisconnectOnUnknownPackets: true,  // Close connection (default)
+}
+```
+
+### Read Deadlines
+
+Set a deadline for packet reading:
+
+```go
+// Set 5 second read deadline
+conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+pk, err := conn.ReadPacket()
+if err != nil {
+    if errors.Is(err, context.DeadlineExceeded) {
+        fmt.Println("Read timeout")
+    }
+    return
+}
+
+// Clear deadline
+conn.SetReadDeadline(time.Time{})
+```
+
+### Low-Level Reading
+
+For advanced use cases, read raw packet data:
+
+```go
+// Read packet as bytes without decoding
+data, err := conn.ReadBytes()
+if err != nil {
+    return
+}
+
+// Or use Read() interface
+buf := make([]byte, 4096)
+n, err := conn.Read(buf)
+if err != nil {
+    return
+}
+packetData := buf[:n]
+```
+
+## Writing Packets
+
+### Basic Packet Writing
+
+Use `WritePacket()` to send packets:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+
+// Send a text message
+err := conn.WritePacket(&packet.Text{
+    TextType: packet.TextTypeChat,
+    Message:  "Hello, world!",
+})
+if err != nil {
+    panic(err)
+}
+```
+
+<Info>
+  `WritePacket()` is safe for concurrent use from multiple goroutines.
+</Info>
+
+### Packet Buffering and Flushing
+
+Packets are buffered and flushed periodically for better performance:
+
+```go
+// Packets are automatically flushed every 1/20th of a second (50ms) by default
+conn.WritePacket(&packet.Text{Message: "Message 1"})
+conn.WritePacket(&packet.Text{Message: "Message 2"})
+// Both packets will be sent together in the next flush
+
+// Flush immediately
+err := conn.Flush()
+```
+
+Configure flush behavior:
+
+```go
+// Client
+dialer := minecraft.Dialer{
+    FlushRate: time.Second / 20, // Default: 20 ticks per second
+    // FlushRate: time.Second / 60,  // 60 ticks per second (lower latency)
+    // FlushRate: -1,                 // Disable auto-flush (manual only)
+}
+
+// Server
+config := minecraft.ListenConfig{
+    FlushRate: time.Second / 20,
+}
+```
+
+With manual flushing:
+
+```go
+dialer := minecraft.Dialer{
+    FlushRate: -1, // Disable auto-flush
+}
+conn, _ := dialer.Dial("raknet", "example.com:19132")
+
+// Must manually flush after writing
+conn.WritePacket(&packet.Text{Message: "Hello"})
+conn.Flush() // Required to actually send the packet
+```
+
+### Low-Level Writing
+
+Write raw packet data:
+
+```go
+// Write serialized packet data
+packetData := []byte{...}
+n, err := conn.Write(packetData)
+if err != nil {
+    panic(err)
+}
+```
+
+## Packet Structure
+
+### Packet Interface
+
+All packets implement the `packet.Packet` interface:
+
+```go
+type Packet interface {
+    // ID returns the packet's numeric identifier
+    ID() uint32
+    
+    // Marshal encodes/decodes the packet
+    Marshal(io protocol.IO)
+}
+```
+
+### Packet Header
+
+Each packet has a header containing the packet ID and sub-client IDs:
+
+```go
+type Header struct {
+    PacketID        uint32
+    SenderSubClient byte
+    TargetSubClient byte
+}
+```
+
+Sub-client IDs are used for split-screen functionality.
+
+### Common Packets
+
+#### Text/Chat Packets
+
+```go
+// Send chat message
+conn.WritePacket(&packet.Text{
+    TextType:         packet.TextTypeChat,
+    NeedsTranslation: false,
+    SourceName:       "Server",
+    Message:          "Welcome to the server!",
+    XUID:             "",
+    PlatformChatID:   "",
+})
+```
+
+#### Movement Packets
+
+```go
+import "github.com/go-gl/mathgl/mgl32"
+
+// Move player
+conn.WritePacket(&packet.MovePlayer{
+    EntityRuntimeID: playerID,
+    Position:        mgl32.Vec3{100, 64, 100},
+    Pitch:           0,
+    Yaw:             90,
+    HeadYaw:         90,
+    Mode:            packet.MoveModeTeleport,
+    OnGround:        true,
+})
+```
+
+#### Chunk Packets
+
+```go
+// Send chunk data
+conn.WritePacket(&packet.LevelChunk{
+    Position:         protocol.ChunkPos{0, 0},
+    SubChunkCount:    16,
+    CacheEnabled:     false,
+    RawPayload:       chunkData,
+})
+```
+
+#### Disconnect
+
+```go
+// Disconnect player
+conn.WritePacket(&packet.Disconnect{
+    HideDisconnectionScreen: false,
+    Message:                 "Server restarting",
+})
+```
+
+## Packet Callbacks
+
+Monitor all packets passing through a connection:
+
+```go
+dialer := minecraft.Dialer{
+    PacketFunc: func(header packet.Header, payload []byte, src, dst net.Addr) {
+        fmt.Printf("Packet 0x%X: %s -> %s (%d bytes)\n",
+            header.PacketID, src, dst, len(payload))
+    },
+}
+
+conn, _ := dialer.Dial("raknet", "example.com:19132")
+```
+
+This callback is invoked for:
+- All packets read from the connection
+- All packets written to the connection  
+- Internal packets during the login sequence
+
+<Warning>
+  The payload is the raw packet data after the header. Do not modify it as it may be referenced elsewhere.
+</Warning>
+
+## Protocol IO
+
+The `protocol.IO` interface provides low-level read/write operations.
+
+### Reader
+
+The `protocol.Reader` type reads primitive data types:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+func (pk *MyPacket) Marshal(r protocol.IO) {
+    r.Varuint32(&pk.Count)
+    r.String(&pk.Name)
+    r.Bool(&pk.Enabled)
+    r.Float32(&pk.Value)
+}
+```
+
+Common read methods:
+- `Uint8()`, `Int8()`, `Bool()`
+- `Uint16()`, `Int16()`, `Uint32()`, `Int32()`, `Uint64()`, `Int64()`
+- `Float32()`, `Float64()`
+- `Varint32()`, `Varuint32()`, `Varint64()`, `Varuint64()`
+- `String()`, `ByteSlice()`
+- `Vec2()`, `Vec3()`, `BlockPos()`
+- `UUID()`
+
+### Writer
+
+The `protocol.Writer` type writes primitive data types:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol"
+
+func (pk *MyPacket) Marshal(w protocol.IO) {
+    w.Varuint32(&pk.Count)
+    w.String(&pk.Name)
+    w.Bool(&pk.Enabled)
+    w.Float32(&pk.Value)
+}
+```
+
+Writer methods mirror Reader methods.
+
+### Bidirectional IO
+
+The `Marshal` method works for both reading and writing:
+
+```go
+func (pk *MyPacket) Marshal(io protocol.IO) {
+    io.Varuint32(&pk.PlayerCount)
+    io.String(&pk.WorldName)
+    io.Vec3(&pk.SpawnPosition)
+}
+
+// Used by Reader to decode
+reader.Marshal(&myPacket)
+
+// Used by Writer to encode  
+writer.Marshal(&myPacket)
+```
+
+## Compression
+
+Packets are automatically compressed/decompressed.
+
+### Compression Settings
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+
+config := minecraft.ListenConfig{
+    Compression:          packet.DefaultCompression, // Flate compression
+    CompressionThreshold: 256,                       // Compress if >= 256 bytes
+}
+
+// Disable compression entirely
+config := minecraft.ListenConfig{
+    CompressionThreshold: -1,
+}
+```
+
+### Per-Connection Compression
+
+```go
+config := minecraft.ListenConfig{
+    CompressionSelector: func(proto minecraft.Protocol) packet.Compression {
+        // Choose compression based on protocol version
+        if proto.ID() >= 534 {
+            return packet.SnappyCompression
+        }
+        return packet.FlateCompression
+    },
+}
+```
+
+## Encryption
+
+Packets are automatically encrypted after the handshake completes. Encryption is handled internally using the ECDSA key established during authentication.
+
+<Info>
+  You don't need to manually encrypt/decrypt packets. The `Conn` type handles this automatically.
+</Info>
+
+## Error Handling
+
+### Invalid Packets
+
+Control behavior for malformed packets:
+
+```go
+dialer := minecraft.Dialer{
+    DisconnectOnInvalidPackets: false, // Skip invalid packets
+    // DisconnectOnInvalidPackets: true,  // Close connection (default)
+}
+```
+
+### Read/Write Errors
+
+```go
+pk, err := conn.ReadPacket()
+if err != nil {
+    if errors.Is(err, net.ErrClosed) {
+        fmt.Println("Connection closed")
+    } else if errors.Is(err, context.DeadlineExceeded) {
+        fmt.Println("Read timeout")
+    } else {
+        fmt.Printf("Read error: %v\n", err)
+    }
+    return
+}
+
+err = conn.WritePacket(&packet.Text{Message: "Hello"})
+if err != nil {
+    if errors.Is(err, net.ErrClosed) {
+        fmt.Println("Connection closed")
+    }
+    return
+}
+```
+
+## Complete Example
+
+A simple chat relay:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+)
+
+func main() {
+    listener, _ := minecraft.Listen("raknet", "0.0.0.0:19132")
+    defer listener.Close()
+    
+    for {
+        conn, _ := listener.Accept()
+        go handlePlayer(conn.(*minecraft.Conn))
+    }
+}
+
+func handlePlayer(conn *minecraft.Conn) {
+    defer conn.Close()
+    
+    // Start the game
+    gameData := minecraft.GameData{
+        WorldName: "My Server",
+        // ... other game data
+    }
+    conn.StartGame(gameData)
+    
+    // Handle packets
+    for {
+        pk, err := conn.ReadPacket()
+        if err != nil {
+            return
+        }
+        
+        switch pk := pk.(type) {
+        case *packet.Text:
+            // Echo chat message back
+            conn.WritePacket(&packet.Text{
+                TextType:   packet.TextTypeChat,
+                SourceName: conn.IdentityData().DisplayName,
+                Message:    pk.Message,
+            })
+            
+        case *packet.RequestChunkRadius:
+            // Approve chunk radius
+            conn.WritePacket(&packet.ChunkRadiusUpdated{
+                ChunkRadius: pk.ChunkRadius,
+            })
+        }
+    }
+}
+```

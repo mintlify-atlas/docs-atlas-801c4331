@@ -1,0 +1,243 @@
+---
+title: protocol
+description: Low-level protocol types and serialization for Minecraft packets
+---
+
+The `minecraft/protocol` package provides low-level types and serialization methods for reading and writing Minecraft Bedrock Edition protocol data.
+
+## Reader
+
+The `Reader` type reads protocol data types from a byte stream.
+
+```go
+type Reader struct {
+    // Internal fields
+}
+```
+
+### NewReader
+
+```go
+func NewReader(r io.ByteReader, shieldID int32, enableLimits bool) *Reader
+```
+
+Creates a new protocol reader.
+
+### Methods
+
+The Reader provides methods for reading various data types:
+
+```go
+func (r *Reader) Uint8(x *uint8)
+func (r *Reader) Int8(x *int8)
+func (r *Reader) Uint16(x *uint16)
+func (r *Reader) Int16(x *int16)
+func (r *Reader) Uint32(x *uint32)
+func (r *Reader) Int32(x *int32)
+func (r *Reader) Uint64(x *uint64)
+func (r *Reader) Int64(x *int64)
+func (r *Reader) Float32(x *float32)
+func (r *Reader) Float64(x *float64)
+func (r *Reader) Bool(x *bool)
+func (r *Reader) String(x *string)
+func (r *Reader) ByteSlice(x *[]byte)
+func (r *Reader) Varint32(x *int32)
+func (r *Reader) Varint64(x *int64)
+func (r *Reader) Varuint32(x *uint32)
+func (r *Reader) Varuint64(x *uint64)
+func (r *Reader) Vec3(x *mgl32.Vec3)
+func (r *Reader) Vec2(x *mgl32.Vec2)
+func (r *Reader) BlockPos(x *BlockPos)
+func (r *Reader) UUID(x *uuid.UUID)
+func (r *Reader) NBT(x any, encoding nbt.Encoding)
+```
+
+## Writer
+
+The `Writer` type writes protocol data types to a byte stream.
+
+```go
+type Writer struct {
+    // Internal fields
+}
+```
+
+### NewWriter
+
+```go
+func NewWriter(w io.ByteWriter, shieldID int32) *Writer
+```
+
+Creates a new protocol writer.
+
+### Methods
+
+The Writer provides methods for writing various data types:
+
+```go
+func (w *Writer) Uint8(x *uint8)
+func (w *Writer) Int8(x *int8)
+func (w *Writer) Uint16(x *uint16)
+func (w *Writer) Int16(x *int16)
+func (w *Writer) Uint32(x *uint32)
+func (w *Writer) Int32(x *int32)
+func (w *Writer) Uint64(x *uint64)
+func (w *Writer) Int64(x *int64)
+func (w *Writer) Float32(x *float32)
+func (w *Writer) Float64(x *float64)
+func (w *Writer) Bool(x *bool)
+func (w *Writer) String(x *string)
+func (w *Writer) ByteSlice(x *[]byte)
+func (w *Writer) Varint32(x *int32)
+func (w *Writer) Varint64(x *int64)
+func (w *Writer) Varuint32(x *uint32)
+func (w *Writer) Varuint64(x *uint64)
+func (w *Writer) Vec3(x *mgl32.Vec3)
+func (w *Writer) Vec2(x *mgl32.Vec2)
+func (w *Writer) BlockPos(x *BlockPos)
+func (w *Writer) UUID(x *uuid.UUID)
+func (w *Writer) NBT(x any, encoding nbt.Encoding)
+```
+
+## Common Types
+
+### BlockPos
+
+```go
+type BlockPos [3]int32
+```
+
+Represents a block position (X, Y, Z).
+
+### ChunkPos
+
+```go
+type ChunkPos [2]int32
+```
+
+Represents a chunk position (X, Z).
+
+### SubChunkPos
+
+```go
+type SubChunkPos [3]int32
+```
+
+Represents a sub-chunk position.
+
+### ItemStack
+
+```go
+type ItemStack struct {
+    ItemType
+    Count           int16
+    MetadataValue   uint32
+    CanBePlacedOn   []string
+    CanBreak        []string
+}
+```
+
+Represents an item stack.
+
+### ItemInstance
+
+```go
+type ItemInstance struct {
+    StackNetworkID int32
+    Stack          ItemStack
+}
+```
+
+Represents an item instance with network ID.
+
+## Protocol Constants
+
+### Protocol Versions
+
+```go
+const (
+    CurrentProtocol = 729  // Current protocol version
+    CurrentVersion  = "1.21.50"  // Current game version
+)
+```
+
+### Device Types
+
+```go
+const (
+    DeviceAndroid = iota
+    DeviceIOS
+    DeviceOSX
+    DeviceFireOS
+    DeviceGearVR
+    DeviceHololens
+    DeviceWin10
+    DeviceWin32
+    DeviceDedicated
+    DeviceTVOS
+    DeviceNintendoSwitch
+    DeviceXbox
+    DeviceWindowsPhone
+    DeviceLinux
+)
+```
+
+## IO Interface
+
+The `IO` interface combines Reader and Writer methods:
+
+```go
+type IO interface {
+    Uint8(x *uint8)
+    Int8(x *int8)
+    // ... all reader/writer methods
+}
+```
+
+This interface is implemented by both Reader and Writer, allowing packets to use a single interface for both marshaling and unmarshaling.
+
+## Example Usage
+
+### Reading Data
+
+```go
+reader := protocol.NewReader(buf, 0, false)
+
+var x int32
+reader.Varint32(&x)
+
+var name string
+reader.String(&name)
+
+var pos protocol.BlockPos
+reader.BlockPos(&pos)
+```
+
+### Writing Data
+
+```go
+var buf bytes.Buffer
+writer := protocol.NewWriter(&buf, 0)
+
+x := int32(100)
+writer.Varint32(&x)
+
+name := "test"
+writer.String(&name)
+
+pos := protocol.BlockPos{10, 64, 20}
+writer.BlockPos(&pos)
+```
+
+### NBT Serialization
+
+```go
+type CustomData struct {
+    Name  string
+    Value int32
+}
+
+data := CustomData{Name: "test", Value: 42}
+
+writer.NBT(&data, nbt.NetworkLittleEndian)
+```

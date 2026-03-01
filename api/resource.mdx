@@ -1,0 +1,389 @@
+---
+title: resource
+description: Resource pack compilation and management
+---
+
+The `minecraft/resource` package handles compiling, reading, and managing Minecraft Bedrock Edition resource packs from files, directories, or raw data.
+
+## Reading Resource Packs
+
+### ReadPath
+
+```go
+func ReadPath(path string) (*Pack, error)
+```
+
+Reads a resource pack from a file path. The path can be either:
+- A `.zip` or `.mcpack` archive
+- A directory (will be compiled into an archive)
+
+<ParamField path="path" type="string">
+  Path to the resource pack file or directory
+</ParamField>
+
+<ResponseField name="*Pack">
+  The compiled resource pack
+</ResponseField>
+
+<ResponseField name="error">
+  Error if reading or compilation fails
+</ResponseField>
+
+### MustReadPath
+
+```go
+func MustReadPath(path string) *Pack
+```
+
+Like ReadPath but panics on error. Useful for initialization.
+
+### ReadURL
+
+```go
+func ReadURL(url string) (*Pack, error)
+```
+
+Downloads and compiles a resource pack from a URL.
+
+<ParamField path="url" type="string">
+  URL to download the resource pack from
+</ParamField>
+
+### MustReadURL
+
+```go
+func MustReadURL(url string) *Pack
+```
+
+Like ReadURL but panics on error.
+
+### Read
+
+```go
+func Read(r io.Reader) (*Pack, error)
+```
+
+Reads a resource pack from a byte stream.
+
+<ParamField path="r" type="io.Reader">
+  Reader containing the resource pack archive data
+</ParamField>
+
+## Pack Type
+
+```go
+type Pack struct {
+    // Internal fields
+}
+```
+
+Represents a compiled resource pack.
+
+### Metadata Methods
+
+#### Name
+
+```go
+func (pack *Pack) Name() string
+```
+
+Returns the resource pack name.
+
+#### UUID
+
+```go
+func (pack *Pack) UUID() uuid.UUID
+```
+
+Returns the resource pack UUID.
+
+#### Description
+
+```go
+func (pack *Pack) Description() string
+```
+
+Returns the resource pack description.
+
+#### Version
+
+```go
+func (pack *Pack) Version() string
+```
+
+Returns the version as a string (e.g., "1.0.0").
+
+#### Modules
+
+```go
+func (pack *Pack) Modules() []Module
+```
+
+Returns all modules in the resource pack.
+
+#### Dependencies
+
+```go
+func (pack *Pack) Dependencies() []Dependency
+```
+
+Returns all dependency resource packs.
+
+### Content Type Methods
+
+#### HasScripts
+
+```go
+func (pack *Pack) HasScripts() bool
+```
+
+Returns true if the pack contains client scripts.
+
+#### HasBehaviours
+
+```go
+func (pack *Pack) HasBehaviours() bool
+```
+
+Returns true if the pack contains behaviours or scripts.
+
+#### HasTextures
+
+```go
+func (pack *Pack) HasTextures() bool
+```
+
+Returns true if the pack contains textures.
+
+#### HasWorldTemplate
+
+```go
+func (pack *Pack) HasWorldTemplate() bool
+```
+
+Returns true if the pack is a world template (contains level.dat).
+
+### Network Methods
+
+#### DownloadURL
+
+```go
+func (pack *Pack) DownloadURL() string
+```
+
+Returns the URL for HTTP download. Empty string means RakNet transfer.
+
+#### Checksum
+
+```go
+func (pack *Pack) Checksum() [32]byte
+```
+
+Returns the SHA256 checksum of the pack.
+
+#### Len
+
+```go
+func (pack *Pack) Len() int
+```
+
+Returns the total size in bytes.
+
+#### DataChunkCount
+
+```go
+func (pack *Pack) DataChunkCount(length int) int
+```
+
+Calculates the number of chunks for a given chunk size.
+
+<ParamField path="length" type="int">
+  The size of each chunk in bytes
+</ParamField>
+
+#### ReadAt
+
+```go
+func (pack *Pack) ReadAt(b []byte, off int64) (n int, err error)
+```
+
+Reads data from the pack at a specific offset.
+
+### Encryption Methods
+
+#### Encrypted
+
+```go
+func (pack *Pack) Encrypted() bool
+```
+
+Returns true if the pack is encrypted.
+
+#### ContentKey
+
+```go
+func (pack *Pack) ContentKey() string
+```
+
+Returns the encryption key (empty if not encrypted).
+
+#### WithContentKey
+
+```go
+func (pack Pack) WithContentKey(key string) *Pack
+```
+
+Creates a copy with an encryption key set.
+
+<ParamField path="key" type="string">
+  The encryption key to set
+</ParamField>
+
+### Other Methods
+
+#### ReadFile
+
+```go
+func (p *Pack) ReadFile(filePath string) ([]byte, error)
+```
+
+Reads a specific file from within the pack.
+
+<ParamField path="filePath" type="string">
+  Path to the file within the pack
+</ParamField>
+
+#### Manifest
+
+```go
+func (pack *Pack) Manifest() Manifest
+```
+
+Returns the pack's manifest data.
+
+## Manifest Type
+
+```go
+type Manifest struct {
+    FormatVersion int
+    Header        Header
+    Modules       []Module
+    Dependencies  []Dependency
+}
+```
+
+### Header
+
+```go
+type Header struct {
+    Name        string
+    Description string
+    UUID        uuid.UUID
+    Version     [3]int
+    MinEngineVersion [3]int
+}
+```
+
+### Module
+
+```go
+type Module struct {
+    Type        string
+    UUID        uuid.UUID
+    Version     [3]int
+    Description string
+}
+```
+
+Module types include:
+- `"resources"` - Textures and assets
+- `"data"` - Behaviour packs
+- `"client_data"` - Client scripts
+
+### Dependency
+
+```go
+type Dependency struct {
+    UUID    uuid.UUID
+    Version [3]int
+}
+```
+
+## Example Usage
+
+### Loading a Resource Pack
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft/resource"
+
+// From a directory
+pack, err := resource.ReadPath("./my_resource_pack")
+if err != nil {
+    panic(err)
+}
+
+// From a .zip/.mcpack file
+pack, err = resource.ReadPath("./pack.mcpack")
+
+// From a URL
+pack, err = resource.ReadURL("https://example.com/pack.mcpack")
+```
+
+### Pack Information
+
+```go
+fmt.Println("Name:", pack.Name())
+fmt.Println("UUID:", pack.UUID())
+fmt.Println("Version:", pack.Version())
+fmt.Println("Size:", pack.Len(), "bytes")
+
+if pack.HasTextures() {
+    fmt.Println("Pack has textures")
+}
+
+if pack.HasBehaviours() {
+    fmt.Println("Pack has behaviours")
+}
+```
+
+### Using with Listener
+
+```go
+pack := resource.MustReadPath("./my_pack")
+
+config := minecraft.ListenConfig{
+    ResourcePacks: []*resource.Pack{pack},
+    TexturePacksRequired: true,
+}
+
+listener, err := config.Listen("raknet", ":19132")
+if err != nil {
+    panic(err)
+}
+```
+
+### Reading Pack Files
+
+```go
+// Read a specific file from the pack
+data, err := pack.ReadFile("textures/blocks/stone.png")
+if err != nil {
+    panic(err)
+}
+
+// Use the file data
+img, err := png.Decode(bytes.NewReader(data))
+```
+
+### Encrypted Packs
+
+```go
+pack := resource.MustReadPath("./encrypted_pack")
+
+// Set encryption key
+encryptedPack := pack.WithContentKey("my-encryption-key")
+
+if encryptedPack.Encrypted() {
+    fmt.Println("Pack is encrypted with key:", encryptedPack.ContentKey())
+}
+```

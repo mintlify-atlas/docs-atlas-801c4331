@@ -1,0 +1,128 @@
+---
+title: Installation
+description: Install Gophertunnel and set up your Go environment
+---
+
+# Installation
+
+Gophertunnel is distributed as a Go module and can be easily integrated into your Go projects.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Check Go Version">
+    Gophertunnel requires **Go 1.24 or higher**. Verify your Go version:
+    
+    ```bash
+    go version
+    ```
+    
+    If you need to upgrade, download the latest version from [go.dev](https://go.dev/dl/).
+  </Step>
+  
+  <Step title="Create a New Go Module (Optional)">
+    If you're starting a new project, create a directory and initialize a Go module:
+    
+    ```bash
+    mkdir my-minecraft-tool
+    cd my-minecraft-tool
+    go mod init github.com/yourusername/my-minecraft-tool
+    ```
+  </Step>
+</Steps>
+
+## Installing Gophertunnel
+
+Install Gophertunnel using `go get`:
+
+```bash
+go get github.com/sandertv/gophertunnel
+```
+
+This will download Gophertunnel and all its dependencies, including:
+
+- `github.com/sandertv/go-raknet` - RakNet protocol implementation
+- `golang.org/x/oauth2` - OAuth2 authentication for Xbox Live
+- `github.com/google/uuid` - UUID generation
+- And other necessary packages
+
+<Info>
+The `go get` command will automatically add Gophertunnel to your `go.mod` file and download all required dependencies.
+</Info>
+
+## Verify Installation
+
+Create a simple test file to verify the installation:
+
+<CodeGroup>
+```go main.go
+package main
+
+import (
+    "fmt"
+    "github.com/sandertv/gophertunnel/minecraft"
+)
+
+func main() {
+    fmt.Println("Gophertunnel is installed!")
+    fmt.Printf("Minecraft package available: %T\n", minecraft.Dialer{})
+}
+```
+</CodeGroup>
+
+Run the program:
+
+```bash
+go run main.go
+```
+
+You should see:
+
+```
+Gophertunnel is installed!
+Minecraft package available: minecraft.Dialer
+```
+
+## Package Structure
+
+Gophertunnel is organized into several packages:
+
+| Package | Description |
+|---------|-------------|
+| `minecraft` | Core package for client/server connections |
+| `minecraft/auth` | Xbox Live and Microsoft authentication |
+| `minecraft/protocol` | Protocol definitions and packet structures |
+| `minecraft/protocol/packet` | Individual packet implementations |
+| `minecraft/resource` | Resource pack handling |
+| `minecraft/text` | Text formatting and color codes |
+
+## Import Examples
+
+Here are the most common imports you'll use:
+
+```go
+import (
+    "github.com/sandertv/gophertunnel/minecraft"              // Core client/server
+    "github.com/sandertv/gophertunnel/minecraft/auth"         // Authentication
+    "github.com/sandertv/gophertunnel/minecraft/protocol/packet" // Packet types
+)
+```
+
+## Updating Gophertunnel
+
+To update to the latest version:
+
+```bash
+go get -u github.com/sandertv/gophertunnel
+go mod tidy
+```
+
+<Note>
+Gophertunnel supports only one Minecraft version at a time (generally the latest official release). When updating, check the release notes for protocol version changes.
+</Note>
+
+## Next Steps
+
+<Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+  Build your first Minecraft client or server with Gophertunnel
+</Card>

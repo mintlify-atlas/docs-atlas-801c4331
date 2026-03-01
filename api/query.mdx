@@ -1,0 +1,184 @@
+---
+title: query
+description: UT3 query protocol implementation for server status
+---
+
+The `query` package implements the UT3 query protocol for querying Minecraft Bedrock Edition server information. Note that not all servers support this protocol (e.g., Bedrock Dedicated Server does not).
+
+## Functions
+
+### Do
+
+```go
+func Do(address string) (information map[string]string, err error)
+```
+
+Queries a server using the UT3 query protocol and returns server information.
+
+<ParamField path="address" type="string">
+  The server address to query (e.g., "localhost:19132")
+</ParamField>
+
+<ResponseField name="map[string]string">
+  A map containing server information if the query succeeds
+</ResponseField>
+
+<ResponseField name="error">
+  Error if the query fails or times out (5 second timeout)
+</ResponseField>
+
+## Information Keys
+
+The returned map typically contains the following keys:
+
+- `hostname` - Server name/MOTD
+- `gametype` - Game type (e.g., "SMP")
+- `game_id` - Game identifier ("MINECRAFTPE")
+- `version` - Server version
+- `plugins` - Installed plugins
+- `map` - World/map name
+- `numplayers` - Current player count
+- `maxplayers` - Maximum player capacity
+- `hostport` - Server port
+- `hostip` - Server IP address
+
+Additional keys may be present depending on the server implementation.
+
+## Example Usage
+
+### Basic Query
+
+```go
+import "github.com/sandertv/gophertunnel/query"
+
+info, err := query.Do("localhost:19132")
+if err != nil {
+    panic(err)
+}
+
+fmt.Println("Server Name:", info["hostname"])
+fmt.Println("Players:", info["numplayers"], "/", info["maxplayers"])
+fmt.Println("Version:", info["version"])
+fmt.Println("Map:", info["map"])
+```
+
+### Full Server Info
+
+```go
+info, err := query.Do("play.example.com:19132")
+if err != nil {
+    log.Printf("Query failed: %v", err)
+    return
+}
+
+fmt.Println("=== Server Information ===")
+for key, value := range info {
+    fmt.Printf("%s: %s\n", key, value)
+}
+```
+
+### With Timeout Handling
+
+```go
+import (
+    "context"
+    "time"
+    "github.com/sandertv/gophertunnel/query"
+)
+
+// Note: query.Do has a built-in 5 second timeout
+info, err := query.Do("server.example.com:19132")
+if err != nil {
+    if strings.Contains(err.Error(), "timeout") {
+        fmt.Println("Server does not support query protocol")
+    } else {
+        fmt.Println("Query error:", err)
+    }
+    return
+}
+
+fmt.Println("Query successful!")
+```
+
+### Server Status Display
+
+```go
+func displayServerStatus(address string) {
+    info, err := query.Do(address)
+    if err != nil {
+        fmt.Printf("Could not query %s: %v\n", address, err)
+        return
+    }
+    
+    fmt.Printf(`
+Server: %s
+  Address: %s
+  Players: %s/%s
+  Version: %s
+  Type: %s
+  Map: %s
+`,
+        info["hostname"],
+        address,
+        info["numplayers"],
+        info["maxplayers"],
+        info["version"],
+        info["gametype"],
+        info["map"],
+    )
+    
+    if plugins, ok := info["plugins"]; ok && plugins != "" {
+        fmt.Println("  Plugins:", plugins)
+    }
+}
+```
+
+### Periodic Monitoring
+
+```go
+func monitorServer(address string, interval time.Duration) {
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        info, err := query.Do(address)
+        if err != nil {
+            log.Printf("Query failed: %v", err)
+            continue
+        }
+        
+        log.Printf("Server: %s - Players: %s/%s",
+            info["hostname"],
+            info["numplayers"],
+            info["maxplayers"],
+        )
+    }
+}
+
+// Monitor every 30 seconds
+go monitorServer("localhost:19132", 30*time.Second)
+```
+
+## Limitations
+
+<Warning>
+Not all Minecraft servers support the query protocol:
+
+- **Supported**: PocketMine-MP and most third-party servers
+- **Not Supported**: Bedrock Dedicated Server (BDS)
+
+For servers that don't support query, use RakNet ping instead:
+```go
+import "github.com/sandertv/go-raknet"
+
+pong, err := raknet.Ping("localhost:19132")
+```
+</Warning>
+
+## Notes
+
+- The query has a built-in 5-second timeout
+- Uses UDP protocol
+- Requires the server to have query enabled in configuration
+- Some servers may return different or additional keys
+- Query may be blocked by firewalls

@@ -1,0 +1,407 @@
+---
+title: Resource Pack Handling
+description: Learn how to load, manage, and serve Minecraft resource packs
+---
+
+This guide covers working with Minecraft Bedrock Edition resource packs using the `minecraft/resource` package.
+
+## Overview
+
+Gophertunnel provides a complete resource pack management system that can:
+- Read resource packs from files, directories, or URLs
+- Parse manifest.json and extract metadata
+- Calculate checksums for validation
+- Serve packs to clients over RakNet or HTTP
+- Handle encrypted packs
+
+## Reading Resource Packs
+
+### From File or Directory
+
+<Steps>
+  <Step title="Import the Package">
+    ```go
+    import "github.com/sandertv/gophertunnel/minecraft/resource"
+    ```
+  </Step>
+
+  <Step title="Load a Pack">
+    The `ReadPath` function accepts both `.mcpack` files and directories:
+
+    ```go
+    pack, err := resource.ReadPath("path/to/pack.mcpack")
+    if err != nil {
+        panic(err)
+    }
+    ```
+
+    Or use `MustReadPath` to panic on error:
+
+    ```go
+    pack := resource.MustReadPath("path/to/pack.mcpack")
+    ```
+  </Step>
+</Steps>
+
+### From URL
+
+Download and load a pack from a remote URL:
+
+```go
+pack, err := resource.ReadURL("https://example.com/pack.mcpack")
+if err != nil {
+    panic(err)
+}
+
+// Or use MustReadURL
+pack := resource.MustReadURL("https://example.com/pack.mcpack")
+```
+
+### From io.Reader
+
+Load a pack from any reader:
+
+```go
+import "os"
+
+file, err := os.Open("pack.mcpack")
+if err != nil {
+    panic(err)
+}
+defer file.Close()
+
+pack, err := resource.Read(file)
+if err != nil {
+    panic(err)
+}
+```
+
+## Pack Metadata
+
+Access resource pack information:
+
+```go
+pack, err := resource.ReadPath("pack.mcpack")
+if err != nil {
+    panic(err)
+}
+
+// Basic information
+name := pack.Name()                    // "My Resource Pack"
+uuid := pack.UUID()                    // uuid.UUID
+desc := pack.Description()             // "A cool pack"
+version := pack.Version()              // "1.0.0"
+
+// Manifest data
+manifest := pack.Manifest()
+modules := pack.Modules()              // []resource.Module
+deps := pack.Dependencies()            // []resource.Dependency
+
+// Pack properties
+hasScripts := pack.HasScripts()        // bool
+hasTextures := pack.HasTextures()      // bool
+hasBehaviors := pack.HasBehaviours()   // bool
+isWorldTemplate := pack.HasWorldTemplate() // bool
+```
+
+## Pack Types
+
+### Resource Packs
+
+Contain textures, models, sounds:
+
+```go
+if pack.HasTextures() {
+    fmt.Println("This pack has custom textures")
+}
+```
+
+### Behavior Packs
+
+Contain scripts and data:
+
+```go
+if pack.HasBehaviours() {
+    fmt.Println("This pack has behaviors")
+}
+
+if pack.HasScripts() {
+    fmt.Println("This pack has client scripts")
+}
+```
+
+### World Templates
+
+Contain a level.dat:
+
+```go
+if pack.HasWorldTemplate() {
+    fmt.Println("This is a world template")
+}
+```
+
+## Serving Packs to Clients
+
+### RakNet Download
+
+Serve packs directly through the Minecraft protocol:
+
+```go
+import "github.com/sandertv/gophertunnel/minecraft"
+
+pack, err := resource.ReadPath("pack.mcpack")
+if err != nil {
+    panic(err)
+}
+
+cfg := minecraft.ListenConfig{
+    StatusProvider: minecraft.NewStatusProvider("My Server", "Gophertunnel"),
+    ResourcePacks:  []*resource.Pack{pack},
+}
+
+listener, err := cfg.Listen("raknet", ":19132")
+if err != nil {
+    panic(err)
+}
+```
+
+### HTTP Download
+
+Serve packs via HTTP for faster downloads:
+
+```go
+packURL := "https://example.com/packs/pack.mcpack"
+pack, err := resource.ReadURL(packURL)
+if err != nil {
+    panic(err)
+}
+
+// The pack will be downloaded by clients over HTTP
+url := pack.DownloadURL() // "https://example.com/packs/pack.mcpack"
+```
+
+## Pack Content
+
+### Reading Files
+
+Read specific files from a pack:
+
+```go
+data, err := pack.ReadFile("manifest.json")
+if err != nil {
+    panic(err)
+}
+
+fmt.Println(string(data))
+```
+
+### Checksums
+
+Get the SHA256 checksum for validation:
+
+```go
+checksum := pack.Checksum() // [32]byte
+```
+
+### Size Information
+
+```go
+totalSize := pack.Len()                    // Total bytes
+chunkCount := pack.DataChunkCount(1024)   // Number of chunks
+```
+
+### Reading Chunks
+
+Read pack data in chunks:
+
+```go
+buffer := make([]byte, 1024)
+offset := int64(0)
+
+n, err := pack.ReadAt(buffer, offset)
+if err != nil {
+    panic(err)
+}
+
+fmt.Printf("Read %d bytes\n", n)
+```
+
+## Encrypted Packs
+
+### Setting Encryption Key
+
+```go
+encryptedPack := pack.WithContentKey("my-encryption-key")
+
+if encryptedPack.Encrypted() {
+    key := encryptedPack.ContentKey() // "my-encryption-key"
+}
+```
+
+## Pack Manifest
+
+The manifest contains pack metadata:
+
+```go
+type Manifest struct {
+    Header struct {
+        Name        string
+        Description string
+        UUID        uuid.UUID
+        Version     [3]int
+    }
+    Modules      []Module
+    Dependencies []Dependency
+}
+```
+
+### Accessing Manifest
+
+```go
+manifest := pack.Manifest()
+
+fmt.Printf("Pack: %s v%d.%d.%d\n",
+    manifest.Header.Name,
+    manifest.Header.Version[0],
+    manifest.Header.Version[1],
+    manifest.Header.Version[2])
+
+for _, module := range manifest.Modules {
+    fmt.Printf("Module: %s (Type: %s)\n", module.UUID, module.Type)
+}
+
+for _, dep := range manifest.Dependencies {
+    fmt.Printf("Depends on: %s v%s\n", dep.UUID, dep.Version)
+}
+```
+
+## Module Types
+
+Resource packs consist of modules:
+
+```go
+type Module struct {
+    Type        string    // "resources", "data", "client_data"
+    UUID        uuid.UUID
+    Version     [3]int
+}
+```
+
+Common module types:
+- `resources` - Textures, models, sounds
+- `data` - Behavior scripts
+- `client_data` - Client-side scripts
+
+## Complete Example
+
+Here's a complete example of loading and serving a resource pack:
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/sandertv/gophertunnel/minecraft"
+    "github.com/sandertv/gophertunnel/minecraft/resource"
+)
+
+func main() {
+    // Load resource pack
+    pack, err := resource.ReadPath("MyPack.mcpack")
+    if err != nil {
+        panic(err)
+    }
+
+    // Print pack information
+    fmt.Printf("Loaded: %s\n", pack)
+    fmt.Printf("UUID: %s\n", pack.UUID())
+    fmt.Printf("Version: %s\n", pack.Version())
+    fmt.Printf("Size: %d bytes\n", pack.Len())
+    fmt.Printf("Checksum: %x\n", pack.Checksum())
+
+    // Check pack type
+    if pack.HasTextures() {
+        fmt.Println("Contains textures")
+    }
+    if pack.HasBehaviours() {
+        fmt.Println("Contains behaviors")
+    }
+
+    // Create server with the pack
+    cfg := minecraft.ListenConfig{
+        StatusProvider: minecraft.NewStatusProvider("Pack Server", "Gophertunnel"),
+        ResourcePacks:  []*resource.Pack{pack},
+    }
+
+    listener, err := cfg.Listen("raknet", ":19132")
+    if err != nil {
+        panic(err)
+    }
+    defer listener.Close()
+
+    fmt.Println("Server started with resource pack")
+
+    for {
+        c, err := listener.Accept()
+        if err != nil {
+            return
+        }
+        go handleConnection(c.(*minecraft.Conn))
+    }
+}
+
+func handleConnection(conn *minecraft.Conn) {
+    defer conn.Close()
+    
+    worldData := minecraft.GameData{}
+    if err := conn.StartGame(worldData); err != nil {
+        return
+    }
+    
+    // Client will download the resource pack before spawning
+    for {
+        pk, err := conn.ReadPacket()
+        if err != nil {
+            break
+        }
+        // Handle packets...
+    }
+}
+```
+
+## Building Packs from Directories
+
+If you have a pack directory structure:
+
+```
+MyPack/
+├── manifest.json
+├── pack_icon.png
+├── textures/
+│   └── blocks/
+└── sounds/
+```
+
+Read it directly:
+
+```go
+pack, err := resource.ReadPath("MyPack/")
+if err != nil {
+    panic(err)
+}
+// Automatically compiled to zip format
+```
+
+## Best Practices
+
+1. **Validate Manifests**: Ensure `manifest.json` exists and is valid
+2. **Check Pack Size**: Large packs may take time to transfer
+3. **Use HTTP for Large Packs**: HTTP downloads are faster than RakNet
+4. **Cache Packs**: Load packs once and reuse them
+5. **Verify Checksums**: Use checksums to ensure pack integrity
+
+## Next Steps
+
+- Learn about [serving packs from a server](/guides/server)
+- Understand [NBT encoding](/guides/nbt) for pack data
+- Build a [proxy](/guides/proxy) to inspect resource pack downloads
